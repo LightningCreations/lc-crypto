@@ -1,3 +1,4 @@
+use alloc::borrow::Cow;
 use zeroize::{Zeroize, Zeroizing};
 
 use super::{Operation, SymmetricCipher};
@@ -225,11 +226,11 @@ fn aes_mix_columns(block: &mut [[u8; 4]]) {
             ^ MIX_COLUMNS_BY3[(*col)[2] as usize]
             ^ (*col)[3]
             ^ (col)[0];
-        block[0][j] = MIX_COLUMNS_BY2[(*col)[2] as usize]
+        block[2][j] = MIX_COLUMNS_BY2[(*col)[2] as usize]
             ^ MIX_COLUMNS_BY3[(*col)[3] as usize]
             ^ (*col)[0]
             ^ (col)[1];
-        block[0][j] = MIX_COLUMNS_BY2[(*col)[3] as usize]
+        block[3][j] = MIX_COLUMNS_BY2[(*col)[3] as usize]
             ^ MIX_COLUMNS_BY3[(*col)[0] as usize]
             ^ (*col)[1]
             ^ (col)[2];
@@ -247,11 +248,11 @@ fn aes_inv_mix_columns(block: &mut [[u8; 4]]) {
             ^ MIX_COLUMNS_BY11[(*col)[2] as usize]
             ^ MIX_COLUMNS_BY13[(*col)[3] as usize]
             ^ MIX_COLUMNS_BY9[(col)[0] as usize];
-        block[0][j] = MIX_COLUMNS_BY14[(*col)[2] as usize]
+        block[2][j] = MIX_COLUMNS_BY14[(*col)[2] as usize]
             ^ MIX_COLUMNS_BY11[(*col)[3] as usize]
             ^ MIX_COLUMNS_BY13[(*col)[0] as usize]
             ^ MIX_COLUMNS_BY9[(col)[1] as usize];
-        block[0][j] = MIX_COLUMNS_BY14[(*col)[3] as usize]
+        block[3][j] = MIX_COLUMNS_BY14[(*col)[3] as usize]
             ^ MIX_COLUMNS_BY11[(*col)[0] as usize]
             ^ MIX_COLUMNS_BY13[(*col)[1] as usize]
             ^ MIX_COLUMNS_BY9[(col)[2] as usize];
@@ -359,8 +360,9 @@ impl SymmetricCipher for Aes<128> {
         }
     }
 
-    fn do_final(&mut self, block: &[u8], out: &mut [u8]) {
-        self.update(block, out)
+    fn do_final<'a>(&mut self, block: &[u8], out: &'a mut [u8]) -> Cow<'a, [u8]> {
+        self.update(block, out);
+        Cow::Borrowed(out)
     }
 }
 
@@ -384,8 +386,9 @@ impl SymmetricCipher for Aes<192> {
         }
     }
 
-    fn do_final(&mut self, block: &[u8], out: &mut [u8]) {
-        self.update(block, out)
+    fn do_final<'a>(&mut self, block: &[u8], out: &'a mut [u8]) -> Cow<'a, [u8]> {
+        self.update(block, out);
+        Cow::Borrowed(out)
     }
 }
 
@@ -415,7 +418,77 @@ impl SymmetricCipher for Aes<256> {
         }
     }
 
-    fn do_final(&mut self, block: &[u8], out: &mut [u8]) {
-        self.update(block, out)
+    fn do_final<'a>(&mut self, block: &[u8], out: &'a mut [u8]) -> Cow<'a, [u8]> {
+        self.update(block, out);
+        Cow::Borrowed(out)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use alloc::boxed::Box;
+
+    use super::Aes;
+    use crate::symm::{Operation, SymmetricCipher, CBC};
+
+    #[test]
+    fn aes_mix_columns() {
+        let mut mat = [
+            [0xdb, 0xf2, 0x01, 0xc6],
+            [0x13, 0x0a, 0x01, 0xc6],
+            [0x53, 0x22, 0x01, 0xc6],
+            [0x45, 0x5c, 0x01, 0xc6],
+        ];
+        let expected = [
+            [0x8e, 0x9f, 0x01, 0xc6],
+            [0x4d, 0xdc, 0x01, 0xc6],
+            [0xa1, 0x58, 0x01, 0xc6],
+            [0xbc, 0x9d, 0x01, 0xc6],
+        ];
+        super::aes_mix_columns(&mut mat);
+        assert_eq!(mat, expected);
+    }
+
+    #[test]
+    fn aes_inv_mix_columns() {
+        let expected = [
+            [0xdb, 0xf2, 0x01, 0xc6],
+            [0x13, 0x0a, 0x01, 0xc6],
+            [0x53, 0x22, 0x01, 0xc6],
+            [0x45, 0x5c, 0x01, 0xc6],
+        ];
+        let mut mat = [
+            [0x8e, 0x9f, 0x01, 0xc6],
+            [0x4d, 0xdc, 0x01, 0xc6],
+            [0xa1, 0x58, 0x01, 0xc6],
+            [0xbc, 0x9d, 0x01, 0xc6],
+        ];
+        super::aes_inv_mix_columns(&mut mat);
+        assert_eq!(mat, expected);
+    }
+
+    #[test]
+    fn aes_128_cbc_decrypt_test_0() {
+        let key: [u8; 16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let iv: [u8; 16] = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        let input: [u8; 16] = [
+            0x03, 0x36, 0x76, 0x3e, 0x96, 0x6d, 0x92, 0x59, 0x5a, 0x56, 0x7c, 0xc9, 0xce, 0x53,
+            0x7f, 0x5e,
+        ];
+        let expected: [u8; 16] = [
+            0xf3, 0x44, 0x81, 0xec, 0x3c, 0xc6, 0x27, 0xba, 0xcd, 0x5d, 0xc3, 0xfb, 0x08, 0xf2,
+            0x73, 0xe6,
+        ];
+        let mut out: [u8; 16] = [0; 16];
+        let mut cipher = CBC::new(Aes::<128>::const_new(), Box::new(iv));
+        cipher.init(&key, Operation::Decrypt);
+        let out = cipher.do_final(&input, &mut out);
+        assert_eq!(&*out, &expected);
     }
 }
