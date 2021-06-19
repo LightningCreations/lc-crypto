@@ -56,7 +56,7 @@ binaries =
 tests = 
 # Package specific Configuration
 
-EXTRA_RUSTFLAGS = 
+EXTRA_RUSTFLAGS = --cfg 'feature="alloc"'
 
 # The package version
 version = 1.3.0
