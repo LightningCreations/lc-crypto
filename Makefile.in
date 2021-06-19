@@ -88,10 +88,12 @@ EXTERN_CRATES = $(foreach procmacro,$(PROC_MACROS),$(call file_to_crate,$(notdir
 export CARGO_PKG_VERSION=$(version)
 export CARGO_MANIFEST_DIR=@abs_srcdir@
 export OUT_DIR=@abs_builddir@
-
+export MAKE
 # Targets
 
-all: stamp
+all: 
+	+@srcdir@/build-dirs.sh $(SUBDIRS)
+	+$(MAKE) stamp
 
 .PHONY: all clean distclean install install-strip check check-local $(binary_outputs:%=install-%) $(binary_outputs:%=install-strip-%) $(foreach subdir,$(SUBDIRS),$(subdir)/install) $(foreach subdir,$(SUBDIRS),$(subdir)/install-strip) $(foreach subdir,$(SUBDIRS),$(subdir)/clean) $(foreach subdir,$(SUBDIRS),$(subdir)/distclean) $(foreach subdir,$(SUBDIRS),$(subdir)/check)
 
