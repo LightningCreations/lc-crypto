@@ -1,7 +1,4 @@
-use std::{
-    convert::{TryFrom, TryInto},
-    mem::MaybeUninit,
-};
+use core::convert::TryInto;
 
 use zeroize::{Zeroize, Zeroizing};
 
