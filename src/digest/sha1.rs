@@ -13,7 +13,7 @@ pub struct Sha1 {
 }
 
 impl Sha1 {
-    pub const fn const_new() -> Self {
+    pub const fn new() -> Self {
         Self {
             h: [0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0],
             size: 0,
@@ -23,7 +23,7 @@ impl Sha1 {
 
 impl Default for Sha1 {
     fn default() -> Self {
-        Self::const_new()
+        Self::new()
     }
 }
 
@@ -31,12 +31,8 @@ impl Digest for Sha1 {
     const OUTPUT_SIZE: usize = 20;
     const BLOCK_SIZE: usize = 64;
 
-    fn new() -> Self {
-        Self::const_new()
-    }
-
     fn init(&mut self) {
-        *self = Self::const_new()
+        *self = Self::new()
     }
 
     fn update(&mut self, block: &[u8]) {

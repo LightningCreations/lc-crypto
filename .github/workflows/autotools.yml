@@ -1,0 +1,30 @@
+name: Rust (autotools)
+
+on:
+  push: 
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  autotools_build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust-channel: [beta, nightly]
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Install Rustup Toolchain
+        run: |
+          rustup toolchain add --profile minimal ${{ matrix.rust-channel }}
+          rustup toolchain default ${{ matrix.rust-channel }}
+          rustup update
+      - name: Create Build Directory
+        run: mkdir -pv build
+      - name: Build
+        working-directory: ${{ github.workspace }}/build
+        run: |
+          ../configure 
+          make
+          make check

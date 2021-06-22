@@ -79,6 +79,7 @@ impl<C> CBC<C> {
         }
     }
 
+    #[allow(unsafe_code)]
     pub fn into_inner(self) -> C {
         let mut md = ManuallyDrop::new(self);
         let ret = unsafe { core::ptr::addr_of_mut!(md.cipher).read() };
@@ -185,18 +186,17 @@ impl<C: SymmetricCipher> SymmetricCipher for Pkcs5Pad<C> {
         self.0.update(block, out)
     }
 
-    fn do_final<'a>(&mut self, mut block: &[u8], mut out: &'a mut [u8]) -> Cow<'a, [u8]> {
+    fn do_final<'a>(&mut self, block: &[u8], out: &'a mut [u8]) -> Cow<'a, [u8]> {
         if let Some(Operation::Encrypt) = self.1 {
             if block.len() == C::BLOCK_SIZE {
                 self.update(block, out);
                 let len = block.len();
                 let out2 = &mut out[len..];
                 let b = C::BLOCK_SIZE as u8;
-                block = &[];
                 let mut v = Zeroizing::new(vec![0u8; C::BLOCK_SIZE].into_boxed_slice());
                 v.fill(b);
                 if out2.len() < C::BLOCK_SIZE {
-                    drop(out2);
+                    // drop(out2);
                     let mut outv = vec![0; 2 * C::BLOCK_SIZE];
                     outv.copy_from_slice(out);
                     self.0.do_final(&v, &mut outv[len..]);
@@ -250,7 +250,7 @@ pub fn encrypt<C: SymmetricCipher>(mut cipher: C, key: &[u8], input: &[u8]) -> V
     for c in chunks {
         let len = out.len();
         out.resize(len + C::BLOCK_SIZE, 0);
-        cipher.update(input, &mut out[len..]);
+        cipher.update(c, &mut out[len..]);
     }
     let len = out.len();
     out.resize(len + C::BLOCK_SIZE, 0);

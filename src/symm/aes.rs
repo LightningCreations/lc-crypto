@@ -199,9 +199,11 @@ fn aes_generate_keys(key: &[u8], rkeys: &mut [[u8; 16]]) {
                 for r in &mut *word {
                     *r = SBOX[*r as usize];
                 }
-                *bytemuck::cast_mut::<[u8; 4], u32>(&mut *word) ^= RCON[i / kwords];
+                for (a, b) in (&mut *word).iter_mut().zip(RCON[i / kwords].to_le_bytes()) {
+                    *a ^= b;
+                }
             }
-            4 if kwords > 6 => {
+            4 => {
                 for r in &mut *word {
                     *r = SBOX[*r as usize];
                 }
@@ -209,8 +211,9 @@ fn aes_generate_keys(key: &[u8], rkeys: &mut [[u8; 16]]) {
             _ => {}
         }
 
-        *bytemuck::cast_mut::<[u8; 4], u32>(&mut *word) ^=
-            *bytemuck::cast_ref::<[u8; 4], u32>(&rkeys[i - kwords]);
+        for (a, &b) in (&mut *word).iter_mut().zip(&rkeys[i - kwords]) {
+            *a ^= b;
+        }
         rkeys[i].copy_from_slice(&*word);
     }
 }
@@ -263,24 +266,22 @@ fn aes_do_enc_round(block: &mut [u8], rkey: &[u8; 16]) {
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
+    let block2 = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
     for i in 0..4 {
-        block[i].rotate_left(i)
+        block2[i].rotate_left(i)
     }
 
-    aes_mix_columns(block);
-    for i in 0..4 {
-        *bytemuck::cast_mut::<[u8; 4], u32>(&mut block[i]) ^=
-            bytemuck::cast_slice::<u8, u32>(rkey)[i];
+    aes_mix_columns(block2);
+    for (a, b) in block.iter_mut().zip(rkey) {
+        *a ^= b;
     }
 }
 
 fn aes_do_dec_round(block: &mut [u8], rkey: &[u8; 16]) {
-    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
-    for i in 0..4 {
-        *bytemuck::cast_mut::<[u8; 4], u32>(&mut block[i]) ^=
-            bytemuck::cast_slice::<u8, u32>(rkey)[i];
+    for (a, b) in block.iter_mut().zip(rkey) {
+        *a ^= b;
     }
+    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
     aes_inv_mix_columns(block);
     for i in 0..4 {
         block[i].rotate_right(i)
@@ -294,22 +295,21 @@ fn aes_do_enc_final_round(block: &mut [u8], rkey: &[u8; 16]) {
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
+    let block2 = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
     for i in 0..4 {
-        block[i].rotate_left(i)
+        block2[i].rotate_left(i)
     }
-    for i in 0..4 {
-        *bytemuck::cast_mut::<[u8; 4], u32>(&mut block[i]) ^=
-            bytemuck::cast_slice::<u8, u32>(rkey)[i];
+    for (a, b) in block.iter_mut().zip(rkey) {
+        *a ^= b;
     }
 }
 
 fn aes_do_dec_first_round(block: &mut [u8], rkey: &[u8; 16]) {
-    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
-    for i in 0..4 {
-        *bytemuck::cast_mut::<[u8; 4], u32>(&mut block[i]) ^=
-            bytemuck::cast_slice::<u8, u32>(rkey)[i];
+    for (a, b) in block.iter_mut().zip(rkey) {
+        *a ^= b;
     }
+    let block = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
+
     for i in 0..4 {
         block[i].rotate_right(i)
     }
@@ -426,10 +426,8 @@ impl SymmetricCipher for Aes<256> {
 
 #[cfg(test)]
 mod test {
-    use alloc::boxed::Box;
-
-    use super::Aes;
-    use crate::symm::{Operation, SymmetricCipher, CBC};
+    #[cfg(any())]
+    use crate::symm::{aes::Aes, Operation, SymmetricCipher};
 
     #[test]
     fn aes_mix_columns() {
@@ -468,12 +466,63 @@ mod test {
     }
 
     #[test]
+    fn aes_test_enc_round() {
+        let rkey = [0u8; 16];
+        let mut block = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        let expected = [
+            106, 156, 93, 81, 106, 33, 97, 44, 92, 92, 176, 109, 69, 39, 217, 51,
+        ];
+
+        super::aes_do_enc_round(&mut block, &rkey);
+
+        assert_eq!(block, expected);
+    }
+
+    #[test]
+    fn aes_test_dec_round() {
+        let rkey = [0u8; 16];
+        let mut block = [
+            106, 156, 93, 81, 106, 33, 97, 44, 92, 92, 176, 109, 69, 39, 217, 51,
+        ];
+        let expected = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+        super::aes_do_dec_round(&mut block, &rkey);
+
+        assert_eq!(block, expected);
+    }
+
+    #[test]
+    fn aes_test_enc_final_round() {
+        let rkey = [0u8; 16];
+        let mut block = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        let expected = [
+            0x63, 0x7c, 0x77, 0x7b, 0x6b, 0x6f, 0xc5, 0xf2, 0x67, 0x2b, 0x30, 0x01, 0x76, 0xfe,
+            0xd7, 0xab,
+        ];
+
+        super::aes_do_enc_final_round(&mut block, &rkey);
+
+        assert_eq!(block, expected);
+    }
+
+    #[test]
+    fn aes_test_dec_first_round() {
+        let rkey = [0u8; 16];
+        let mut block = [
+            0x63, 0x7c, 0x77, 0x7b, 0x6b, 0x6f, 0xc5, 0xf2, 0x67, 0x2b, 0x30, 0x01, 0x76, 0xfe,
+            0xd7, 0xab,
+        ];
+        let expected = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+
+        super::aes_do_dec_first_round(&mut block, &rkey);
+
+        assert_eq!(block, expected);
+    }
+
+    #[cfg(any())]
+    #[test]
     fn aes_128_cbc_decrypt_test_0() {
         let key: [u8; 16] = [
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let iv: [u8; 16] = [
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
             0x00, 0x00,
         ];
@@ -486,9 +535,50 @@ mod test {
             0x73, 0xe6,
         ];
         let mut out: [u8; 16] = [0; 16];
-        let mut cipher = CBC::new(Aes::<128>::const_new(), Box::new(iv));
+        let mut cipher = Aes::<128>::const_new();
         cipher.init(&key, Operation::Decrypt);
         let out = cipher.do_final(&input, &mut out);
         assert_eq!(&*out, &expected);
+    }
+
+    #[test]
+    pub fn aes_128_generate_round_keys() {
+        let key = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let expected = [
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            [
+                98, 99, 99, 99, 98, 99, 99, 99, 98, 99, 99, 99, 98, 99, 99, 99,
+            ],
+            [
+                155, 152, 152, 201, 249, 251, 251, 170, 155, 152, 152, 201, 249, 251, 251, 170,
+            ],
+            [
+                144, 151, 52, 80, 105, 108, 207, 250, 242, 244, 87, 51, 11, 15, 172, 153,
+            ],
+            [
+                238, 6, 218, 123, 135, 106, 21, 129, 117, 158, 66, 178, 126, 145, 238, 43,
+            ],
+            [
+                127, 46, 43, 136, 248, 68, 62, 9, 141, 218, 124, 187, 243, 75, 146, 144,
+            ],
+            [
+                236, 97, 75, 133, 20, 37, 117, 140, 153, 255, 9, 55, 106, 180, 155, 167,
+            ],
+            [
+                33, 117, 23, 135, 53, 80, 98, 11, 172, 175, 107, 60, 198, 27, 240, 155,
+            ],
+            [
+                14, 249, 3, 51, 59, 169, 97, 56, 151, 6, 10, 4, 81, 29, 250, 159,
+            ],
+            [
+                177, 212, 216, 226, 138, 125, 185, 218, 29, 123, 179, 222, 76, 102, 73, 65,
+            ],
+            [
+                180, 239, 91, 203, 62, 146, 226, 17, 35, 233, 81, 207, 111, 143, 24, 142,
+            ],
+        ];
+        let mut out = [[0; 16]; 11];
+        super::aes_generate_keys(&key, &mut out);
+        assert_eq!(out, expected);
     }
 }
