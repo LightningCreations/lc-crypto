@@ -18,7 +18,7 @@ jobs:
       - name: Install Rustup Toolchain
         run: |
           rustup toolchain add --profile minimal ${{ matrix.rust-channel }}
-          rustup toolchain default ${{ matrix.rust-channel }}
+          rustup default ${{ matrix.rust-channel }}
           rustup update
       - name: Build
         run: cargo build 
