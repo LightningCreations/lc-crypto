@@ -17,7 +17,7 @@ LCRUST_CHECK_EDITION([2018],[
 ])
 
 
-
+AC_CONFIG_SUBDIRS([vendor/bytemuck vendor/zeroize])
 AC_CONFIG_FILES([Makefile])
 
 AC_OUTPUT

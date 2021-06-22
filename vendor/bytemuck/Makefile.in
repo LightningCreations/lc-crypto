@@ -56,7 +56,7 @@ binaries =
 tests = 
 # Package specific Configuration
 
-EXTRA_RUSTFLAGS = --cfg 'feature="min_const_generics"'
+EXTRA_RUSTFLAGS = 
 
 # The package version
 version =
@@ -91,7 +91,9 @@ export OUT_DIR=@abs_builddir@
 
 # Targets
 
-all: stamp
+all: 
+	+@srcdir@/build-dirs.sh $(SUBDIRS)
+	+$(MAKE) stamp
 
 .PHONY: all clean distclean install install-strip $(binary_outputs:%=install-%) $(binary_outputs:%=install-strip-%) $(foreach subdir,$(SUBDIRS),$(subdir)/install) $(foreach subdir,$(SUBDIRS),$(subdir)/install-strip) $(foreach subdir,$(SUBDIRS),$(subdir)/clean) $(foreach subdir,$(SUBDIRS),$(subdir)/distclean) $(foreach subdir,$(SUBDIRS),$(subdir)/check)
 
@@ -121,7 +123,7 @@ $(OUTPUT): $(srcdir)/src/lib.rs $(foreach subdir,$(SUBDIRS),$(subdir)/stamp)
 include $(foreach bin,$(binary_outputs),$(bin).d)
 
 $(foreach out,$(binary_outputs),$(out).d): %@EXEEXT@.d: $(srcdir)/src/bin/%.rs $(OUTPUT)
-	$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS) $(foreach cfg,$(CFG),--cfg $(cfg)) --crate-name $(call file_to_crate,$*) --crate-type bin --emit dep-info=@builddir@/$@ -o$*@EXEEXT@ $< $(EXTERN_CRATES) --extern $(CRATE_NAME)=@abs_builddir@/$(OUTPUT)
+	$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS)$(foreach cfg,$(CFG),--cfg $(cfg)) --crate-name $(call file_to_crate,$*) --crate-type bin --emit dep-info=@builddir@/$@ -o$*@EXEEXT@ $< $(EXTERN_CRATES) --extern $(CRATE_NAME)=@abs_builddir@/$(OUTPUT)
 
 $(binary_outputs): %@EXEEXT@: $(srcdir)/src/bin/%.rs $(OUTPUT)
 	+$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS) $(foreach cfg,$(CFG),--cfg $(cfg)) --crate-name $(call file_to_crate,$*) --crate-type bin --emit dep-info=@builddir@/$@.d --emit link=@abs_builddir@/$@ -o$@ $< $(EXTERN_CRATES) --extern $(CRATE_NAME)=@abs_builddir@/$(OUTPUT)
@@ -147,13 +149,13 @@ include test-$(OUTPUT:%.rlib=%@EXEEXT@).d
 tests/:
 	mkdir tests/
 
-test-$(OUTPUT:%.rlib=%@EXEEXT@).d: $(srcdir)/src/lib.rs Makefile
-	$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS) $(foreach cfg,$(CFG),--cfg $(cfg)) --cfg test --crate-name $(CRATE_NAME) --test --emit dep-info=@builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@).d -otest-$(OUTPUT:%.rlib=%@EXEEXT@) $< $(EXTERN_CRATES)
+test-$(OUTPUT:%.rlib=%@EXEEXT@).d: $(srcdir)/src/lib.rs
+	$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS)  $(foreach cfg,$(CFG),--cfg $(cfg)) --cfg test --crate-name $(CRATE_NAME) --test --emit dep-info=@builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@).d -otest-$(OUTPUT:%.rlib=%@EXEEXT@) $< $(EXTERN_CRATES)
 
-test-$(OUTPUT:%.rlib=%@EXEEXT@): $(srcdir)/src/lib.rs Makefile
-	+$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS) $(foreach cfg,$(CFG),--cfg $(cfg)) --cfg test --crate-name $(CRATE_NAME) --test --emit dep-info=@builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@).d --emit link=@abs_builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@) -o$(OUTPUT:%.rlib=%@EXEEXT@) $< $(EXTERN_CRATES)
+test-$(OUTPUT:%.rlib=%@EXEEXT@): $(srcdir)/src/lib.rs
+	+$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS)  $(foreach cfg,$(CFG),--cfg $(cfg)) --cfg test --crate-name $(CRATE_NAME) --test --emit dep-info=@builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@).d --emit link=@abs_builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@) -o$(OUTPUT:%.rlib=%@EXEEXT@) $< $(EXTERN_CRATES)
 
-$(tests:%.rs=%@EXEEXT@): %@EXEEXT@: $(srcdir)/%.rs $(OUTPUT) tests/ Makefile
+$(tests:%.rs=%@EXEEXT@): %@EXEEXT@: $(srcdir)/%.rs $(OUTPUT) tests/
 	+$(RUSTC) $(RUSTFLAGS) $(EXTRA_RUSTFLAGS) $(foreach cfg,$(CFG),--cfg $(cfg)) --crate-name $(call file_to_crate,$(*F)) --test --emit dep-info=@builddir@/$@.d --emit link=@abs_builddir@/$@ -o$@ $< $(EXTERN_CRATES) --extern $(CRATE_NAME)=@abs_builddir@/$(OUTPUT)
 
 check: @builddir@/test-$(OUTPUT:%.rlib=%@EXEEXT@) $(tests:%.rs=@builddir@/%@EXEEXT@) $(foreach subdir,$(SUBDIRS),$(subdir)/check)
