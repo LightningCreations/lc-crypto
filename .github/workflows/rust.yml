@@ -21,7 +21,9 @@ jobs:
           rustup default ${{ matrix.rust-channel }}
           rustup update
       - name: Build
-        run: cargo build 
+        run: |
+           cargo build
+           cargo test
   rustfmt:
     runs-on: ubuntu-latest
     steps:
