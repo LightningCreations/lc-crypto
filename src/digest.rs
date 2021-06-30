@@ -1,4 +1,5 @@
-use alloc::boxed::Box;
+use alloc::{boxed::Box, vec};
+use zeroize::Zeroizing;
 
 pub mod sha1;
 pub mod sha2;
@@ -49,6 +50,7 @@ impl<D: Digest> Digest for Box<D> {
 }
 
 pub fn digest<D: Digest>(mut digest: D, bytes: &[u8], out: &mut [u8]) {
+    digest.init();
     let mut x = bytes.chunks(D::BLOCK_SIZE);
     let last = x.next_back();
     for block in x {
@@ -58,11 +60,71 @@ pub fn digest<D: Digest>(mut digest: D, bytes: &[u8], out: &mut [u8]) {
     digest.do_final(last.unwrap_or(&[]), out)
 }
 
+pub struct Hmac<D: Digest> {
+    digest: D,
+    key: Zeroizing<Box<[u8]>>,
+}
+
+impl<D: Digest> Hmac<D> {
+    pub fn new(mut digest: D, key: &[u8]) -> Self {
+        let mut inner_key = Zeroizing::new(vec![0u8; D::BLOCK_SIZE].into_boxed_slice());
+        if key.len() <= inner_key.len() {
+            let len = key.len();
+            inner_key[..len].copy_from_slice(key);
+        } else {
+            self::digest(&mut digest, key, &mut inner_key[..D::OUTPUT_SIZE]);
+        }
+        Self {
+            digest,
+            key: inner_key,
+        }
+    }
+}
+
+impl<D: Digest> Digest for Hmac<D> {
+    const OUTPUT_SIZE: usize = D::OUTPUT_SIZE;
+    const BLOCK_SIZE: usize = D::BLOCK_SIZE;
+
+    fn init(&mut self) {
+        self.digest.init();
+        for i in self.key.iter_mut() {
+            *i ^= 0x36;
+        }
+        self.digest.update(&self.key);
+        for i in self.key.iter_mut() {
+            *i ^= 0x36 ^ 0x5c; // Undo the inner padding, and add the outer padding
+        }
+    }
+
+    fn update(&mut self, block: &[u8]) {
+        self.digest.update(block);
+    }
+
+    fn do_final(&mut self, lblock: &[u8], output: &mut [u8]) {
+        let mut tmp_out = Zeroizing::new(vec![0u8; D::BLOCK_SIZE].into_boxed_slice());
+        self.digest.do_final(lblock, &mut tmp_out);
+        self.digest.init();
+        let mut x = self
+            .key
+            .chunks(D::BLOCK_SIZE)
+            .chain(tmp_out.chunks(D::BLOCK_SIZE));
+        let last = x.next_back();
+        for block in x {
+            self.digest.update(block)
+        }
+        self.digest.do_final(last.unwrap_or(&[]), output);
+        for i in self.key.iter_mut() {
+            *i ^= 0x5c; // Undo the inner padding, and add the outer padding
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::digest::{
         sha1::Sha1,
         sha2::{Sha224, Sha256, Sha512, Sha512_224, Sha512_256},
+        Hmac,
     };
 
     use super::sha2::Sha384;
@@ -206,6 +268,19 @@ mod test {
             0xce, 0xf0, 0x96, 0x7a,
         ];
         super::digest(Sha512_256::new(), input, &mut out);
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn hmac_sha1_test_smart() {
+        let input = b"The quick brown fox jumps over the lazy dog";
+        let key = b"key";
+        let mut out = [0u8; 20];
+        let expected = [
+            0xde, 0x7c, 0x9b, 0x85, 0xb8, 0xb7, 0x8a, 0xa6, 0xbc, 0x8a, 0x7a, 0x36, 0xf7, 0x0a,
+            0x90, 0x70, 0x1c, 0x9d, 0xb4, 0xd9,
+        ];
+        super::digest(Hmac::new(Sha1::new(), key), input, &mut out);
         assert_eq!(out, expected);
     }
 }

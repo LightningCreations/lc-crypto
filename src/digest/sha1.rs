@@ -7,6 +7,17 @@ use super::Digest;
 #[cfg(target_arch = "x86_64")]
 mod x86_64;
 
+///
+/// A Digest implementation that acts according the the SHA-1 Digest.
+///
+/// ## Security
+/// Note: This Digest is not secure.
+/// [Many](https://en.wikipedia.org/wiki/SHA-1#Attacks) cryptographic attacks against the algorithm are known and have been published.
+///
+/// It is recommended that this implementation be used only to validate integrety of data against accidental corruption.
+/// The algorithms exported from [`lc_crypto::digest::sha2`] are more secure and should be used instead where security is desired or required.
+///
+/// This algorithm is deprecated for security purposes, but may be used where security is not necessary
 pub struct Sha1 {
     h: [u32; 5],
     size: u64,

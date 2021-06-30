@@ -12,6 +12,12 @@ pub struct X86Rand {
     _inner: (),
 }
 
+impl X86Rand {
+    pub fn new() -> Self {
+        Self { _inner: () }
+    }
+}
+
 impl SecureRandom for X86Rand {
     const STATE_SIZE: usize = 0;
 

@@ -585,6 +585,7 @@ enable_option_checking=no
 ac_subst_vars='LTLIBOBJS
 LIBOBJS
 subdirs
+libc
 rust_channel
 rust_version
 rustc_name
@@ -651,6 +652,7 @@ ac_subst_files=''
 ac_user_opts='
 enable_option_checking
 enable_native_instructions
+enable_hardware_random
 '
       ac_precious_vars='build_alias
 host_alias
@@ -1285,6 +1287,7 @@ Optional Features:
   --disable-FEATURE       do not include FEATURE (same as --enable-FEATURE=no)
   --enable-FEATURE[=ARG]  include FEATURE [ARG=yes]
 Generate code for the current system, or set the system to target.
+Force use of the hardware random generator if it is available, even if unset
 
 Some influential environment variables:
   CC          C compiler command
@@ -3042,6 +3045,17 @@ else
 fi
 
 
+# Check whether --enable-hardware-random was given.
+if test "${enable_hardware_random+set}" = set; then :
+  enableval=$enable_hardware_random;
+    if x$enableval \= xyes
+    then
+        RUSTFLAGS="$RUSTFLAGS --cfg feature=\"hardware-rand\""
+    fi
+
+fi
+
+
 
     SAVE_RUSTFLAGS="$RUSTFLAGS"
     RUSTFLAGS="$RUSTFLAGS --edition 2018"
@@ -3065,6 +3079,16 @@ fi
 
     fi
 
+
+
+# case x$host_os in
+#     xlinux* )
+#         libc=libc
+#         AC_CONFIG_SUBDIRS([vendor/libc])
+#     ;;
+#     * )
+#     ;;
+# esac
 
 
 

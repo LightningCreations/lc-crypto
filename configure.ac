@@ -37,14 +37,16 @@ LCRUST_CHECK_EDITION([2018],[
     AC_MSG_ERROR([lc-crypto requires rust edition 2018])
 ])
 
-case x$host_os in
-    xlinux* )
-        libc=libc
-        AC_CONFIG_SUBDIRS([vendor/libc])
-    ;;
-    * )
-    ;;
-esac
+# case x$host_os in
+#     xlinux* )
+#         libc=libc
+#         AC_CONFIG_SUBDIRS([vendor/libc])
+#     ;;
+#     * )
+#     ;;
+# esac
+
+AC_SUBST([libc])
 
 AC_CONFIG_SUBDIRS([vendor/bytemuck vendor/zeroize])
 AC_CONFIG_FILES([Makefile])

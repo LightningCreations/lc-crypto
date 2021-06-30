@@ -81,15 +81,12 @@ impl<D1: Digest, D2: Digest> DoubleDigestRandom<D1, D2> {
 impl<D1: Digest, D2: Digest> SecureRandom for DoubleDigestRandom<D1, D2> {
     const STATE_SIZE: usize = D1::OUTPUT_SIZE;
     fn seed<I: IntoIterator<Item = u64>>(&mut self, seed: I) {
-        let mut iter = seed.into_iter();
-        let mut r = self.state1.chunks_mut(8);
-        let last = r.next_back().unwrap();
-        for (o, v) in r.zip(&mut iter) {
-            bytemuck::cast_slice_mut::<u8, [u8; 8]>(o)[0] = v.to_le_bytes();
+        self.state1.fill(0);
+        for (o, v) in self.state1.chunks_mut(8).zip(seed) {
+            let bytes = v.to_le_bytes();
+            let len = o.len();
+            o.copy_from_slice(&bytes[..len])
         }
-        let bytes = Zeroizing::new(iter.next().unwrap().to_le_bytes());
-        let len = last.len();
-        last.copy_from_slice(&bytes[..len]);
     }
 
     fn next_bytes(&mut self, out: &mut [u8]) {
