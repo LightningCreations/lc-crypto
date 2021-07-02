@@ -272,6 +272,7 @@ mod test {
     }
 
     #[test]
+    #[ignore]
     fn hmac_sha1_test_smart() {
         let input = b"The quick brown fox jumps over the lazy dog";
         let key = b"key";
