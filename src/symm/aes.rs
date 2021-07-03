@@ -426,7 +426,6 @@ impl SymmetricCipher for Aes<256> {
 
 #[cfg(test)]
 mod test {
-    #[cfg(any())]
     use crate::symm::{aes::Aes, Operation, SymmetricCipher};
 
     #[test]
@@ -519,7 +518,7 @@ mod test {
         assert_eq!(block, expected);
     }
 
-    #[cfg(any())]
+    #[ignore]
     #[test]
     fn aes_128_cbc_decrypt_test_0() {
         let key: [u8; 16] = [
