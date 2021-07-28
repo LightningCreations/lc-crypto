@@ -3131,6 +3131,11 @@ fi
 
 
 
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking what the host system is" >&5
+$as_echo_n "checking what the host system is... " >&6; }
+{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $host_os" >&5
+$as_echo "$host_os" >&6; }
+
 # case x$host_os in
 #     xlinux* )
 #         libc=libc

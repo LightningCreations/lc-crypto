@@ -37,6 +37,9 @@ LCRUST_CHECK_EDITION([2018],[
     AC_MSG_ERROR([lc-crypto requires rust edition 2018])
 ])
 
+AC_MSG_CHECKING([what the host system is])
+AC_MSG_RESULT([$host_os])
+
 # case x$host_os in
 #     xlinux* )
 #         libc=libc
