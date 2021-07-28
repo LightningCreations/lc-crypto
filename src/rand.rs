@@ -103,5 +103,3 @@ impl<D1: Digest, D2: Digest> SecureRandom for DoubleDigestRandom<D1, D2> {
 }
 
 pub mod system;
-
-
