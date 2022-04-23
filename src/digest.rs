@@ -1,6 +1,7 @@
 use alloc::{boxed::Box, vec};
 use zeroize::Zeroizing;
 
+#[cfg(feature = "sha1")]
 pub mod sha1;
 pub mod sha2;
 

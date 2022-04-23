@@ -11,6 +11,8 @@ zeroize = {version="1.3.0",features=["alloc"]}
 
 [features]
 hardware-rand = [] # Use hardware random on x86 when available, even if a software impl is available
+sha1 = []
+default = ["sha1"]
 
 
 [target.'cfg(target_os="linux")'.dependencies]
