@@ -261,3 +261,24 @@ pub fn encrypt<C: SymmetricCipher>(mut cipher: C, key: &[u8], input: &[u8]) -> V
 
     out
 }
+
+pub fn decrypt<C: SymmetricCipher>(mut cipher: C, key: &[u8], input: &[u8]) -> Vec<u8> {
+    let len = input.len();
+    let mut out = Vec::with_capacity(len + (C::BLOCK_SIZE - len % C::BLOCK_SIZE) % C::BLOCK_SIZE);
+    let mut chunks = input.chunks(C::BLOCK_SIZE);
+    let last = chunks.next_back().unwrap_or(&[]);
+    cipher.init(key, Operation::Decrypt);
+    for c in chunks {
+        let len = out.len();
+        out.resize(len + C::BLOCK_SIZE, 0);
+        cipher.update(c, &mut out[len..]);
+    }
+    let len = out.len();
+    out.resize(len + C::BLOCK_SIZE, 0);
+    let sl = cipher.do_final(last, &mut out[len..]);
+    if let Cow::Owned(v) = sl {
+        out.extend_from_slice(&v[C::BLOCK_SIZE..]);
+    }
+
+    out
+}

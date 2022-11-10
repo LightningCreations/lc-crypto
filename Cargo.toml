@@ -9,6 +9,9 @@ edition = "2018"
 bytemuck = {version="1.5.2",features=["min_const_generics"]}
 zeroize = {version="1.3.0",features=["alloc"]}
 
+[dev-dependencies]
+concat-idents = "1.1"
+
 [features]
 hardware-rand = [] # Use hardware random on x86 when available, even if a software impl is available
 sha1 = []
