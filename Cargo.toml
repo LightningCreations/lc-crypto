@@ -16,6 +16,8 @@ concat-idents = "1.1"
 hardware-rand = [] # Use hardware random on x86 when available, even if a software impl is available
 sha1 = []
 default = ["sha1"]
+std = []
+
 
 
 [target.'cfg(target_os="linux")'.dependencies]

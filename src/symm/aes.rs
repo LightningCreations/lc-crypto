@@ -215,16 +215,6 @@ fn aes_generate_keys(key: &[u8], rkeys: &mut [[u8; 16]]) {
             *a ^= b;
         }
         rkeys[i].copy_from_slice(&*word);
-
-        eprintln!("Round keys:");
-        let keys = bytemuck::cast_slice::<_,[[u8;4];4]>(&*rkeys);
-        for keys in keys{
-            for k in keys{
-                eprint!("{:#010X} ",u32::from_be_bytes(*k))
-            }
-            eprintln!();
-        }
-        
     }
 }
 
@@ -276,11 +266,9 @@ fn aes_inv_mix_columns(block: &mut [u8]) {
 const PERMUTE: [usize;16] = [0,5,10,15,4,9,14,3,8,13,2,7,12,1,6,11];
 
 fn aes_do_enc_round(block: &mut [u8], rkey: &[u8; 16]) {
-    eprintln!("Block: {:x?}",block);
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    eprintln!("SBOX: {:x?}",block);
     
     let mut copied = [0u8;16];
     for i in 0..block.len() {
@@ -289,76 +277,57 @@ fn aes_do_enc_round(block: &mut [u8], rkey: &[u8; 16]) {
     block.copy_from_slice(&copied);
     let block2 = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
     
-    eprintln!("Rotate left: {:x?}",block2);
 
     aes_mix_columns(block2);
-    eprintln!("Mix Columns: {:x?}",block2);
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
 
-    eprintln!("Round Key: {:x?}",rkey);
-    eprintln!("Add Round Key: {:x?}",block);
     
 }
 
 fn aes_do_dec_round(block: &mut [u8], rkey: &[u8; 16]) {
-    eprintln!("Input {:x?}",block);
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
-    eprintln!("Add Round Key: {:x?}",block);
     aes_inv_mix_columns(block);
-    eprintln!("Inv Mix Columns: {:x?}",block);
     let mut copied = [0u8;16];
     for i in 0..block.len() {
         copied[PERMUTE[i]] = block[i];
     }
     block.copy_from_slice(&copied);
-    eprintln!("Rotate Right: {:?}",block);
     for i in &mut *block {
         *i = INV_SBOX[*i as usize];
     }
-    eprintln!("Inverse Sbox: {:?}",block);
 }
 
 fn aes_do_enc_final_round(block: &mut [u8], rkey: &[u8; 16]) {
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    eprintln!("SBOX: {:x?}",block);
     
     let mut copied = [0u8;16];
     for i in 0..block.len() {
         copied[i] = block[PERMUTE[i]];
     }
     block.copy_from_slice(&copied);
-
-    eprintln!("Rotate left: {:x?}",block);
-
-    eprintln!("Round Key: {:x?}",rkey);
-    eprintln!("Add Round Key: {:x?}",block);
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
 }
 
 fn aes_do_dec_first_round(block: &mut [u8], rkey: &[u8; 16]) {
-    eprintln!("Input: {:x?}",block);
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
-    eprintln!("Add Round Key: {:x?}",block);
     let mut copied = [0u8;16];
     for i in 0..block.len() {
-        copied[i] = block[PERMUTE[i]];
+        copied[PERMUTE[i]] = block[i];
     }
     block.copy_from_slice(&copied);
-    eprintln!("Rotate Right: {:x?}",block);
     for i in &mut *block {
         *i = INV_SBOX[*i as usize];
     }
-    eprintln!("Inverse Sbox: {:x?}",block);
 }
 
 fn aes_encrypt(block: &mut [u8], rkeys: &[[u8; 16]]) {
@@ -367,18 +336,14 @@ fn aes_encrypt(block: &mut [u8], rkeys: &[[u8; 16]]) {
             bytemuck::cast_slice::<u8, u32>(&rkeys[0])[i];
     }
     for i in 1..(rkeys.len() - 1) {
-        eprintln!("Round {}:",i);
         aes_do_enc_round(block, &rkeys[i]);
     }
-    eprintln!("Final Round:");
     aes_do_enc_final_round(block, rkeys.last().unwrap());
 }
 
 fn aes_decrypt(block: &mut [u8], rkeys: &[[u8; 16]]) {
-    eprintln!("First Round:");
     aes_do_dec_first_round(block, rkeys.last().unwrap());
     for i in (1..(rkeys.len() - 1)).rev() {
-        eprintln!("Round {}:",i);
         aes_do_dec_round(block, &rkeys[i]);
     }
     for i in 0..4 {
@@ -507,7 +472,6 @@ mod test {
                         });
                         concat_idents::concat_idents!(test_name = aes_decrypt_,$keysize_g1,_vartext_,$plaintext_g1 {
                             #[test]
-                            #[ignore]
                             $(#[$test_attrs_g1])*
                             fn test_name() {
                                 let key = [0u8;($keysize_g1/8)];
