@@ -1,4 +1,4 @@
-#![cfg_attr(not(any(test,feature="std")),no_std)]
+#![cfg_attr(not(any(test, feature = "std")), no_std)]
 #![deny(unsafe_code)]
 
 extern crate alloc;

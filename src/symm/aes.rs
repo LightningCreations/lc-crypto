@@ -203,7 +203,7 @@ fn aes_generate_keys(key: &[u8], rkeys: &mut [[u8; 16]]) {
                     *a ^= b;
                 }
             }
-            4 if kwords>6 => {
+            4 if kwords > 6 => {
                 for r in &mut *word {
                     *r = SBOX[*r as usize];
                 }
@@ -241,7 +241,7 @@ fn aes_mix_columns(block: &mut [[u8; 4]]) {
 }
 
 fn aes_inv_mix_columns(block: &mut [u8]) {
-    let block = bytemuck::cast_slice_mut::<_,[u8;4]>(block);
+    let block = bytemuck::cast_slice_mut::<_, [u8; 4]>(block);
     for j in 0..4usize {
         let col = Zeroizing::new([block[j][0], block[j][1], block[j][2], block[j][3]]);
         block[j][0] = MIX_COLUMNS_BY14[(*col)[0] as usize]
@@ -263,27 +263,24 @@ fn aes_inv_mix_columns(block: &mut [u8]) {
     }
 }
 
-const PERMUTE: [usize;16] = [0,5,10,15,4,9,14,3,8,13,2,7,12,1,6,11];
+const PERMUTE: [usize; 16] = [0, 5, 10, 15, 4, 9, 14, 3, 8, 13, 2, 7, 12, 1, 6, 11];
 
 fn aes_do_enc_round(block: &mut [u8], rkey: &[u8; 16]) {
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    
-    let mut copied = [0u8;16];
+
+    let mut copied = [0u8; 16];
     for i in 0..block.len() {
         copied[i] = block[PERMUTE[i]];
     }
     block.copy_from_slice(&copied);
     let block2 = bytemuck::cast_slice_mut::<u8, [u8; 4]>(block);
-    
 
     aes_mix_columns(block2);
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
-
-    
 }
 
 fn aes_do_dec_round(block: &mut [u8], rkey: &[u8; 16]) {
@@ -291,7 +288,7 @@ fn aes_do_dec_round(block: &mut [u8], rkey: &[u8; 16]) {
         *a ^= b;
     }
     aes_inv_mix_columns(block);
-    let mut copied = [0u8;16];
+    let mut copied = [0u8; 16];
     for i in 0..block.len() {
         copied[PERMUTE[i]] = block[i];
     }
@@ -305,8 +302,8 @@ fn aes_do_enc_final_round(block: &mut [u8], rkey: &[u8; 16]) {
     for i in &mut *block {
         *i = SBOX[*i as usize];
     }
-    
-    let mut copied = [0u8;16];
+
+    let mut copied = [0u8; 16];
     for i in 0..block.len() {
         copied[i] = block[PERMUTE[i]];
     }
@@ -320,7 +317,7 @@ fn aes_do_dec_first_round(block: &mut [u8], rkey: &[u8; 16]) {
     for (a, b) in block.iter_mut().zip(rkey) {
         *a ^= b;
     }
-    let mut copied = [0u8;16];
+    let mut copied = [0u8; 16];
     for i in 0..block.len() {
         copied[PERMUTE[i]] = block[i];
     }
@@ -439,8 +436,8 @@ impl SymmetricCipher for Aes<256> {
 #[cfg(test)]
 mod test {
 
-    mod kats{
-        use crate::symm::{Operation,SymmetricCipher,aes::Aes};
+    mod kats {
+        use crate::symm::{aes::Aes, Operation, SymmetricCipher};
         macro_rules! gen_aes_known_answer_tests{
             {
                 vartext: [
@@ -458,7 +455,7 @@ mod test {
                                 let ciphertext = u128::to_be_bytes($ciphertext_g1);
 
                                 let mut aes = Aes::<$keysize_g1>::const_new();
-                                
+
                                 let mut output = [0u8;16];
 
                                 aes.init(&key,Operation::Encrypt);
@@ -491,7 +488,7 @@ mod test {
             }
         }
 
-        gen_aes_known_answer_tests!{
+        gen_aes_known_answer_tests! {
             vartext: [
                 128: {
                     (0x80000000000000000000000000000000,0x3ad78e726c1ec02b7ebfe92b23d9ec34),
@@ -510,5 +507,4 @@ mod test {
             ]
         }
     }
-
 }
