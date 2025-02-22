@@ -6,19 +6,20 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck = {version="1.5.2",features=["min_const_generics"]}
-zeroize = {version="1.3.0",features=["alloc"]}
+bytemuck = { version = "1.5.2", features = ["min_const_generics"] }
+zeroize = { version = "1.3.0", features = ["alloc"] }
 
 [dev-dependencies]
 concat-idents = "1.1"
 
 [features]
-hardware-rand = [] # Use hardware random on x86 when available, even if a software impl is available
+hardware-rand = [
+] # Use hardware random on x86 when available, even if a software impl is available
+allow-weak-hw-rand = []
 sha1 = []
 default = ["sha1"]
 std = []
 
 
-
 [target.'cfg(target_os="linux")'.dependencies]
-libc = {version="0.2",default-features=false}
+libc = { version = "0.2", default-features = false }

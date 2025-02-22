@@ -17,9 +17,16 @@ impl<'a, SR: SecureRandom> Iterator for Seeds<'a, SR> {
 pub trait SecureRandom {
     // The number of bytes in the state. This, divided by 8 and rounded up yields the maximum number of words consumed by seed
     const STATE_SIZE: usize;
-    fn seed<I: IntoIterator<Item = u64>>(&mut self, seed: I);
+    fn seed_dyn(&mut self, seed: &mut dyn Iterator<Item = u64>);
 
     fn next_bytes(&mut self, out: &mut [u8]);
+
+    fn seed(&mut self, mut seed: impl Iterator<Item = u64>)
+    where
+        Self: Sized,
+    {
+        self.seed_dyn(&mut seed);
+    }
 
     fn seeds(&mut self) -> Seeds<Self>
     where
@@ -31,8 +38,9 @@ pub trait SecureRandom {
 
 impl<SR: SecureRandom + ?Sized> SecureRandom for &mut SR {
     const STATE_SIZE: usize = SR::STATE_SIZE;
-    fn seed<I: IntoIterator<Item = u64>>(&mut self, seed: I) {
-        SR::seed(self, seed)
+
+    fn seed_dyn(&mut self, seed: &mut dyn Iterator<Item = u64>) {
+        <SR as SecureRandom>::seed_dyn(self, seed);
     }
 
     fn next_bytes(&mut self, out: &mut [u8]) {
@@ -42,8 +50,8 @@ impl<SR: SecureRandom + ?Sized> SecureRandom for &mut SR {
 
 impl<SR: SecureRandom + ?Sized> SecureRandom for Box<SR> {
     const STATE_SIZE: usize = SR::STATE_SIZE;
-    fn seed<I: IntoIterator<Item = u64>>(&mut self, seed: I) {
-        SR::seed(self, seed)
+    fn seed_dyn(&mut self, seed: &mut dyn Iterator<Item = u64>) {
+        <SR as SecureRandom>::seed_dyn(self, seed);
     }
 
     fn next_bytes(&mut self, out: &mut [u8]) {
@@ -80,7 +88,8 @@ impl<D1: Digest, D2: Digest> DoubleDigestRandom<D1, D2> {
 
 impl<D1: Digest, D2: Digest> SecureRandom for DoubleDigestRandom<D1, D2> {
     const STATE_SIZE: usize = D1::OUTPUT_SIZE;
-    fn seed<I: IntoIterator<Item = u64>>(&mut self, seed: I) {
+    #[inline]
+    fn seed_dyn(&mut self, seed: &mut dyn Iterator<Item = u64>) {
         self.state1.fill(0);
         for (o, v) in self.state1.chunks_mut(8).zip(seed) {
             let bytes = v.to_le_bytes();
