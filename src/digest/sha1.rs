@@ -18,6 +18,10 @@ mod x86_64;
 /// The algorithms exported from [`lc_crypto::digest::sha2`] are more secure and should be used instead where security is desired or required.
 ///
 /// This algorithm is deprecated for security purposes, but may be used where security is not necessary
+#[cfg_attr(
+    not(feature = "sha1"),
+    deprecated = "SHA-1 does not provide adequite security against intentional collisions or preimage attacks"
+)]
 pub struct Sha1 {
     h: [u32; 5],
     size: u64,

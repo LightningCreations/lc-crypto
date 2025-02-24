@@ -21,7 +21,8 @@ impl X86Rand {
 impl SecureRandom for X86Rand {
     const STATE_SIZE: usize = 0;
 
-    fn seed<I: IntoIterator<Item = u64>>(&mut self, _: I) {}
+    #[inline(always)]
+    fn seed_dyn(&mut self, _: &mut dyn Iterator<Item = u64>) {}
 
     #[allow(unsafe_code, unreachable_code, unused_variables, unused_mut)] // AAAA cfg doesn't supress lints
     fn next_bytes(&mut self, out: &mut [u8]) {

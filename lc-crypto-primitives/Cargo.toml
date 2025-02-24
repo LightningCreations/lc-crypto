@@ -1,0 +1,12 @@
+[package]
+name = "lc-crypto-primitives"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+zeroize.workspace = true
+cfg-match.workspace = true
+
+[features]
+alloc = []

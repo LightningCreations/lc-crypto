@@ -1,7 +1,7 @@
 use alloc::{boxed::Box, vec};
 use zeroize::Zeroizing;
 
-#[cfg(feature = "sha1")]
+#[cfg(feature = "__deprecated-sha1")]
 pub mod sha1;
 pub mod sha2;
 
@@ -59,6 +59,17 @@ pub fn digest<D: Digest>(mut digest: D, bytes: &[u8], out: &mut [u8]) {
     }
 
     digest.do_final(last.unwrap_or(&[]), out)
+}
+
+pub fn digest_static<const N: usize, D: Digest>(digest: D, bytes: &[u8]) -> [u8; N] {
+    const {
+        assert!(D::OUTPUT_SIZE == N);
+    }
+    let mut output = [0u8; N];
+
+    self::digest(digest, bytes, &mut output);
+
+    output
 }
 
 pub struct Hmac<D: Digest> {
@@ -123,9 +134,9 @@ impl<D: Digest> Digest for Hmac<D> {
 #[cfg(test)]
 mod test {
     use crate::digest::{
+        Hmac,
         sha1::Sha1,
         sha2::{Sha224, Sha256, Sha512, Sha512_224, Sha512_256},
-        Hmac,
     };
 
     use super::sha2::Sha384;

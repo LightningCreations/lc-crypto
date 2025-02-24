@@ -5,5 +5,6 @@ extern crate alloc;
 
 pub mod cmp;
 pub mod digest;
+pub mod error;
 pub mod rand;
 pub mod symm;
