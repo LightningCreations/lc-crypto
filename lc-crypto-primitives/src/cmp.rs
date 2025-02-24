@@ -1,13 +1,29 @@
-mod asm;
+use crate::asm;
 
+#[inline]
 pub fn bytes_eq_secure(a: &[u8], b: &[u8]) -> bool {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "Arguments to `bytes_eq_secure` must have the same length"
-    );
+    checked_bytes_eq_secure(a, b)
+        .ok()
+        .expect("Parameters must have the same length")
+}
 
-    unsafe { asm::eq_bytes_secure_impl(a.as_ptr(), b.as_ptr(), a.len()) }
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BadLengthError;
+
+impl core::fmt::Display for BadLengthError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Arguments must have equal lengths")
+    }
+}
+
+#[inline]
+pub fn checked_bytes_eq_secure(a: &[u8], b: &[u8]) -> Result<bool, BadLengthError> {
+    if a.len() != b.len() {
+        Err(BadLengthError)
+    } else {
+        Ok(unsafe { asm::eq_bytes_secure(a.as_ptr(), b.as_ptr(), a.len()) })
+    }
 }
 
 #[cfg(test)]

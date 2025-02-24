@@ -1,11 +1,8 @@
 [package]
-name = "lc-crypto-primitives"
+name = "lc-crypto-secret"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 bytemuck.workspace = true
-cfg-match.workspace = true
-
-[features]
-alloc = []
+lc-crypto-primitives.workspace = true
