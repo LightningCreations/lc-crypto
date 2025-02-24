@@ -6,3 +6,7 @@ edition.workspace = true
 [dependencies]
 bytemuck.workspace = true
 lc-crypto-primitives.workspace = true
+
+[features]
+std = ["alloc"]
+alloc = []

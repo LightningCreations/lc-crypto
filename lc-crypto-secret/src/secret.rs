@@ -13,7 +13,33 @@ use lc_crypto_primitives::{
 
 use crate::traits::SecretTy;
 
-/// `Secret` is a type that wraps a secret value in a manner that only allows opaque operations to be performed on the value, such as conversions to other `Secret` types.
+/// [`Secret<T>`] is a type that wraps a secret value in a manner that only allows opaque operations to be performed on the value, such as conversions to other `Secret` types.
+///
+/// `T` must be a secret type (implement the [`SecretTy`]) trait, which are types that implement [`Pod`] and [`Eq`] (and slices of such types).
+///
+/// [`Secret`] will be zeroed on drop, though this is only best effort as copies may be made by the compiler freely.
+///
+/// [`Secret`] is `repr(transparent)` over its element. Note that transmuting to the element type removes the secret protection.
+///
+/// # Trait Implementations
+///
+/// [`Zeroable`] is unconditionally implemented (Which is correct because [`SecretTy`] proves that `T` is [`Pod`] and thus [`Zeroable`]).
+///
+/// [`PartialEq`] and [`Eq`] are implemented. [`PartialEq<T>`] is also implemented.
+/// These perform a bytewise comparison (rather than a valuewise comparison), using [`bytes_eq_secure`] to avoid side-channels being created by a non-opaque comparison.
+///
+/// [`Clone`] is implemented and does a trivial of the underlying value (due to drop only zeroing the contents of the value securely).
+/// [`Copy`] is not implemented due to the [`Drop`] impl.
+///
+/// Many [`core::ops`] are implemented for [`Secret<T>`] when `T` is a primitive type.
+/// [`Index`] and [`IndexMut`] are available for slices and return references to [`Secret`] values within the slice.
+///
+/// Arithmetic operations (like [`Add`][core::ops::Add]) use wrapping arithmetic (unless `T` is wrapped in [`core::num::Saturating`], in which case Saturating arithmetic is used) and do not panic on overflow.
+/// Note that [`Div`][core::ops::Div] and [`Rem`][core::ops::Rem] are not implemented
+///
+/// [`core::fmt::Debug`] allows printing [`Secret`], but will not print the interior value (Instead it prints an opaque string).
+/// There is no [`core::fmt::Display`] (or other trait)
+///
 #[repr(transparent)]
 pub struct Secret<T: SecretTy + ?Sized>(T);
 
@@ -46,28 +72,43 @@ impl<T: SecretTy + Default> Default for Secret<T> {
 }
 
 impl<T: SecretTy> Secret<T> {
+    /// Creates a new secret value that stores `val`.
+    /// This is an entry point for creating secret values
     pub const fn new(val: T) -> Self {
         Self(val)
     }
 
+    /// Gets a raw pointer to the inner value.
+    ///
+    /// # Safety
+    /// The returned pointer can be dereferenced for the lifetime of `self`. It must only be used to reading (not writing to) `self`.
+    /// Taking a mutable reference to the [`Secret`] or assigning to it invalidates the returned pointer
     pub const fn as_ptr(&self) -> *const T {
         &raw const self.0
     }
 
+    /// Gets a mutable raw pointer to the inner value.
+    ///
+    /// # Safety
+    /// The returned pointer can be dereferenced for the lifetime of `self`.
+    /// Using `self` in any way (other than via the return value) invalidates the pointer
     pub const fn as_mut_ptr(&mut self) -> *mut T {
         &raw mut self.0
     }
 
     /// Sets the interior secret value to `val`.
-    /// This may be faster than `*self = Self::new(val)` because it avoids redundantly zeroing `self`
+    /// This may be faster than `*self = Self::new(val)` because it avoids redundantly zeroing `self` first
     pub const fn set(&mut self, val: T) {
         unsafe { core::ptr::write(self, Self::new(val)) }
     }
 
+    /// Creates a Secret value set to all zeroes.
+    /// This is equivalent to calling [`bytemuck::zeroed()`] or (a safe version of) [`core::mem::zeroed()`].
     pub const fn zeroed() -> Self {
         bytemuck::zeroed()
     }
 
+    /// Constructs a Secret Value from a a byte array.
     pub const fn from_bytes<const N: usize>(val: [u8; N]) -> Self {
         const {
             assert!(N == core::mem::size_of::<T>());
@@ -266,97 +307,333 @@ macro_rules! project_secret_mut{
     }
 }
 
+macro_rules! impl_binary_trait {
+    ($prim_ty:ty,  $tr_name:ident, $assign_tr_name:ident, $op_method:ident, $assign_op_method:ident, $wrapping_op:ident, $saturating_op:ident) => {
+        const _: () = {
+            #[allow(unused_imports)] // Used by `impl_secret_logic`
+            use core::ops::$tr_name;
+            impl core::ops::$tr_name for Secret<$prim_ty> {
+                type Output = Self;
+
+                fn $op_method(self, other: Self) -> Self {
+                    Self::new(
+                        self.into_inner_nonsecret()
+                            .$wrapping_op(other.into_inner_nonsecret()),
+                    )
+                }
+            }
+            impl core::ops::$tr_name<$prim_ty> for Secret<$prim_ty> {
+                type Output = Self;
+
+                fn $op_method(self, other: $prim_ty) -> Self {
+                    Self::new(self.into_inner_nonsecret().$wrapping_op(other))
+                }
+            }
+
+            impl core::ops::$tr_name<&$prim_ty> for Secret<$prim_ty> {
+                type Output = Self;
+
+                fn $op_method(self, other: &$prim_ty) -> Self {
+                    Self::new(self.into_inner_nonsecret().$wrapping_op(*other))
+                }
+            }
+
+            impl core::ops::$tr_name<&Self> for Secret<$prim_ty> {
+                type Output = Self;
+
+                fn $op_method(self, other: &Self) -> Self {
+                    Self::new(
+                        self.into_inner_nonsecret()
+                            .$wrapping_op(*other.get_nonsecret()),
+                    )
+                }
+            }
+
+            impl core::ops::$assign_tr_name for Secret<$prim_ty> {
+                fn $assign_op_method(&mut self, other: Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(__val.$wrapping_op(other.into_inner_nonsecret()))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<$prim_ty> for Secret<$prim_ty> {
+                fn $assign_op_method(&mut self, other: $prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(__val.$wrapping_op(other))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&Self> for Secret<$prim_ty> {
+                fn $assign_op_method(&mut self, other: &Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(__val.$wrapping_op(*other.get_nonsecret()))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&$prim_ty> for Secret<$prim_ty> {
+                fn $assign_op_method(&mut self, other: &$prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(__val.$wrapping_op(*other))
+                }
+            }
+
+            // Explicit Wrapping support
+
+            impl core::ops::$tr_name for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: Self) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$wrapping_op(other.into_inner_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<Secret<$prim_ty>> for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: Secret<$prim_ty>) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$wrapping_op(other.into_inner_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<$prim_ty> for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: $prim_ty) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret().0.$wrapping_op(other),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&$prim_ty> for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &$prim_ty) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret().0.$wrapping_op(*other),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&Self> for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &Self) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$wrapping_op(other.get_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&Secret<$prim_ty>> for Secret<core::num::Wrapping<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &Secret<$prim_ty>) -> Self {
+                    Self::new(core::num::Wrapping(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$wrapping_op(*other.get_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name for Secret<core::num::Wrapping<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(
+                        __val.0.$wrapping_op(other.into_inner_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<Secret<$prim_ty>>
+                for Secret<core::num::Wrapping<$prim_ty>>
+            {
+                fn $assign_op_method(&mut self, other: Secret<$prim_ty>) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(
+                        __val.0.$wrapping_op(other.into_inner_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<$prim_ty> for Secret<core::num::Wrapping<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: $prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(__val.0.$wrapping_op(other)))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&Self> for Secret<core::num::Wrapping<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: &Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(
+                        __val.0.$wrapping_op(other.get_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&Secret<$prim_ty>>
+                for Secret<core::num::Wrapping<$prim_ty>>
+            {
+                fn $assign_op_method(&mut self, other: &Secret<$prim_ty>) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(
+                        __val.0.$wrapping_op(*other.get_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&$prim_ty> for Secret<core::num::Wrapping<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: &$prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Wrapping(__val.0.$wrapping_op(*other)))
+                }
+            }
+
+            // Explicit Saturation support
+
+            impl core::ops::$tr_name for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: Self) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$saturating_op(other.into_inner_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<Secret<$prim_ty>> for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: Secret<$prim_ty>) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$saturating_op(other.into_inner_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<$prim_ty> for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: $prim_ty) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret().0.$saturating_op(other),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&$prim_ty> for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &$prim_ty) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret().0.$saturating_op(*other),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&Self> for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &Self) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$saturating_op(other.get_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$tr_name<&Secret<$prim_ty>> for Secret<core::num::Saturating<$prim_ty>> {
+                type Output = Self;
+
+                fn $op_method(self, other: &Secret<$prim_ty>) -> Self {
+                    Self::new(core::num::Saturating(
+                        self.into_inner_nonsecret()
+                            .0
+                            .$saturating_op(*other.get_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name for Secret<core::num::Saturating<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(
+                        __val.0.$saturating_op(other.into_inner_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<Secret<$prim_ty>>
+                for Secret<core::num::Saturating<$prim_ty>>
+            {
+                fn $assign_op_method(&mut self, other: Secret<$prim_ty>) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(
+                        __val.0.$saturating_op(other.into_inner_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<$prim_ty> for Secret<core::num::Saturating<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: $prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(__val.0.$saturating_op(other)))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&Self> for Secret<core::num::Saturating<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: &Self) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(
+                        __val.0.$saturating_op(other.get_nonsecret().0),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&Secret<$prim_ty>>
+                for Secret<core::num::Saturating<$prim_ty>>
+            {
+                fn $assign_op_method(&mut self, other: &Secret<$prim_ty>) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(
+                        __val.0.$saturating_op(*other.get_nonsecret()),
+                    ))
+                }
+            }
+
+            impl core::ops::$assign_tr_name<&$prim_ty> for Secret<core::num::Saturating<$prim_ty>> {
+                fn $assign_op_method(&mut self, other: &$prim_ty) {
+                    let __val = *self.get_nonsecret();
+                    self.set(core::num::Saturating(__val.0.$saturating_op(*other)))
+                }
+            }
+        };
+    };
+}
+
 macro_rules! impl_secret_arith{
     ($($ty:ty),*) => {
         $(
-            impl core::ops::Add for Secret<$ty> {
-                type Output = Self;
-
-                fn add(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_add(other.into_inner_nonsecret()))
-                }
-            }
-            impl core::ops::Add<$ty> for Secret<$ty> {
-                type Output = Self;
-
-                fn add(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_add(other))
-                }
-            }
-            impl core::ops::Sub for Secret<$ty> {
-                type Output = Self;
-
-                fn sub(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_sub(other.into_inner_nonsecret()))
-                }
-            }
-            impl core::ops::Sub<$ty> for Secret<$ty> {
-                type Output = Self;
-
-                fn sub(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_sub(other))
-                }
-            }
-            impl core::ops::Mul for Secret<$ty> {
-                type Output = Self;
-
-                fn mul(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_mul(other.into_inner_nonsecret()))
-                }
-            }
-            impl core::ops::Mul<$ty> for Secret<$ty> {
-                type Output = Self;
-
-                fn mul(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret().wrapping_mul(other))
-                }
-            }
-
-            impl core::ops::AddAssign for Secret<$ty> {
-                fn add_assign(&mut self, other: Self){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_add(other.into_inner_nonsecret())))}
-                }
-            }
-
-            impl core::ops::AddAssign<$ty> for Secret<$ty> {
-                fn add_assign(&mut self, other: $ty){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_add(other)))}
-                }
-            }
-
-            impl core::ops::SubAssign for Secret<$ty> {
-                fn sub_assign(&mut self, other: Self){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_sub(other.into_inner_nonsecret())))}
-                }
-            }
-
-            impl core::ops::SubAssign<$ty> for Secret<$ty> {
-                fn sub_assign(&mut self, other: $ty){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_sub(other)))}
-                }
-            }
-            impl core::ops::MulAssign for Secret<$ty> {
-                fn mul_assign(&mut self, other: Self){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_mul(other.into_inner_nonsecret())))}
-                }
-            }
-            impl core::ops::MulAssign<$ty> for Secret<$ty> {
-                fn mul_assign(&mut self, other: $ty){
-                    let val = *self.get_nonsecret();
-
-                    unsafe{core::ptr::write(self, Self::new(val.wrapping_mul(other)))}
-                }
-            }
+            impl_binary_trait!($ty, Add, AddAssign, add, add_assign, wrapping_add, saturating_add);
+            impl_binary_trait!($ty, Sub, SubAssign, sub, sub_assign, wrapping_sub, saturating_sub);
+            impl_binary_trait!($ty, Mul, MulAssign, mul, mul_assign, wrapping_mul, saturating_mul);
         )*
     }
 }
@@ -368,13 +645,13 @@ macro_rules! impl_secret_neg{
                 type Output = Self;
 
                 fn neg(self) -> Self {
-                    Self::new(-self.into_inner_nonsecret())
+                    Self::new(self.into_inner_nonsecret().wrapping_neg())
                 }
             }
 
             impl Secret<$ty>{
                 pub const fn negate_in_place(&mut self){
-                    unsafe{core::ptr::write(self, Self::new(-*self.get_nonsecret()))}
+                    unsafe{core::ptr::write(self, Self::new((*self.get_nonsecret()).wrapping_neg()))}
                 }
             }
         )*
@@ -384,44 +661,9 @@ macro_rules! impl_secret_neg{
 macro_rules! impl_secret_logic {
     ($($ty:ty),*) => {
         $(
-            impl core::ops::BitOr for Secret<$ty> {
-                type Output = Self;
-                fn bitor(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret() | other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitOr<$ty> for Secret<$ty> {
-                type Output = Self;
-                fn bitor(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret() | other)
-                }
-            }
-
-            impl core::ops::BitAnd for Secret<$ty> {
-                type Output = Self;
-                fn bitand(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret() & other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitAnd<$ty> for Secret<$ty> {
-                type Output = Self;
-                fn bitand(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret() & other)
-                }
-            }
-
-            impl core::ops::BitXor for Secret<$ty> {
-                type Output = Self;
-                fn bitxor(self, other: Self) -> Self {
-                    Self::new(self.into_inner_nonsecret() | other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitXor<$ty> for Secret<$ty> {
-                type Output = Self;
-                fn bitxor(self, other: $ty) -> Self {
-                    Self::new(self.into_inner_nonsecret() ^ other)
-                }
-            }
+            impl_binary_trait!($ty, BitAnd, BitAndAssign, bitand, bitand_assign, bitand, bitand);
+            impl_binary_trait!($ty, BitOr, BitOrAssign, bitor, bitor_assign, bitor, bitor);
+            impl_binary_trait!($ty, BitXor, BitXorAssign, bitxor, bitxor_assign, bitxor, bitxor);
 
             impl core::ops::Not for Secret<$ty> {
                 type Output = Self;
@@ -437,45 +679,6 @@ macro_rules! impl_secret_logic {
                     self.set(!val)
                 }
             }
-
-            impl core::ops::BitOrAssign for Secret<$ty> {
-                fn bitor_assign(&mut self, other: Self) {
-                    let val = *self.get_nonsecret();
-                    self.set(val | other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitOrAssign<$ty> for Secret<$ty> {
-                fn bitor_assign(&mut self, other: $ty) {
-                    let val = *self.get_nonsecret();
-                    self.set(val | other)
-                }
-            }
-
-            impl core::ops::BitAndAssign for Secret<$ty> {
-                fn bitand_assign(&mut self, other: Self) {
-                    let val = *self.get_nonsecret();
-                    self.set(val & other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitAndAssign<$ty> for Secret<$ty> {
-                fn bitand_assign(&mut self, other: $ty) {
-                    let val = *self.get_nonsecret();
-                    self.set(val & other)
-                }
-            }
-
-            impl core::ops::BitXorAssign for Secret<$ty> {
-                fn bitxor_assign(&mut self, other: Self) {
-                    let val = *self.get_nonsecret();
-                    self.set(val ^ other.into_inner_nonsecret())
-                }
-            }
-            impl core::ops::BitXorAssign<$ty> for Secret<$ty> {
-                fn bitxor_assign(&mut self, other: $ty) {
-                    let val = *self.get_nonsecret();
-                    self.set(val ^ other)
-                }
-            }
         )*
     }
 }
@@ -488,10 +691,18 @@ impl_secret_logic! {
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
 }
 
-impl Secret<[u8; 256]> {
-    pub fn sbox_lookup(&self, key: &Secret<u8>) -> Secret<u8> {
+impl Secret<u8> {
+    /// Looks up `self`in a substituion box given by a non-secret array.
+    /// This performs an operation that is defensive against side-channels created by both compiler optimizations and cache ops
+    pub fn sbox_lookup(&self, sbox: &[u8; 256]) -> Secret<u8> {
         // SAFETY:
-        // self.as_ptr() is guaranteed dereferenceable by `&self`
-        Secret::new(unsafe { sbox_lookup(*key.get_nonsecret(), self.as_ptr()) })
+        // `sbox` is guaranteed dereferenceable
+        Secret::new(unsafe { sbox_lookup(*self.get_nonsecret(), core::ptr::from_ref(sbox)) })
+    }
+
+    pub fn sbox_lookup_secret(&self, secret_sbox: &Secret<[u8; 256]>) -> Secret<u8> {
+        // SAFETY:
+        // `sbox` is guaranteed dereferenceable
+        Secret::new(unsafe { sbox_lookup(*self.get_nonsecret(), secret_sbox.as_ptr()) })
     }
 }

@@ -10,12 +10,13 @@ edition = "2024"
 
 [workspace.dependencies]
 libc = { version = "0.2", default-features = false }
-bytemuck = { version = "1.5.2", features = [
+bytemuck = { git = "https://github.com/Lokathor/bytemuck", rev = "6751565", version = "1.21", features = [
     "min_const_generics",
     "must_cast",
     "zeroable_maybe_uninit",
     "zeroable_atomics",
     "const_zeroed",
+    "pod_saturating",
 ] }
 lc-crypto-primitives = { path = "lc-crypto-primitives" }
 cfg-match = "0.2.1"
