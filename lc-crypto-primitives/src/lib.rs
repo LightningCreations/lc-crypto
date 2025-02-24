@@ -12,3 +12,6 @@ pub mod error;
 pub mod mem;
 pub mod rand;
 pub mod traits;
+
+#[cfg(test)]
+mod test;

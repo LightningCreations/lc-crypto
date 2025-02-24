@@ -9,3 +9,11 @@ cfg-match.workspace = true
 
 [features]
 alloc = []
+
+[dev-dependencies]
+criterion = "0.5.1"
+
+[[bench]]
+name = "bench-asm"
+harness = false
+src = "bench/bench-asm.rs"
