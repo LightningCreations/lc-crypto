@@ -1,5 +1,5 @@
 use core::{
-    mem::ManuallyDrop,
+    alloc::Layout,
     ops::{Index, IndexMut},
     slice::SliceIndex,
 };
@@ -11,7 +11,7 @@ use lc_crypto_primitives::{
     mem::transmute_unchecked,
 };
 
-use crate::traits::SecretTy;
+use crate::traits::{Sealed, SecretTy};
 
 /// [`Secret<T>`] is a type that wraps a secret value in a manner that only allows opaque operations to be performed on the value, such as conversions to other `Secret` types.
 ///
@@ -109,6 +109,8 @@ impl<T: SecretTy> Secret<T> {
     }
 
     /// Constructs a Secret Value from a a byte array.
+    ///
+    /// Sattically fails to compile if `val` is not the same size as `T`
     pub const fn from_bytes<const N: usize>(val: [u8; N]) -> Self {
         const {
             assert!(N == core::mem::size_of::<T>());
@@ -118,6 +120,9 @@ impl<T: SecretTy> Secret<T> {
         Self(unsafe { transmute_unchecked(val) })
     }
 
+    /// Safely transmutes to [`Secret<U>`] (validated by [`Pod`]).
+    ///
+    /// Fails to compile if `T` and `U` are different sizes
     pub const fn must_cast<U: SecretTy>(self) -> Secret<U> {
         const {
             assert!(core::mem::size_of::<T>() == core::mem::size_of::<U>());
@@ -126,6 +131,9 @@ impl<T: SecretTy> Secret<T> {
         unsafe { transmute_unchecked(self) }
     }
 
+    /// Safely does a pointer-cast to [`Secret<U>`] (validated by [`Pod`]).
+    ///
+    /// Fails to compile if `T` and `U` are different sizes or `U` is more strictly aligned than `U`
     pub const fn must_cast_ref<U: SecretTy>(&self) -> &Secret<U> {
         const {
             assert!(core::mem::size_of::<T>() == core::mem::size_of::<U>());
@@ -135,6 +143,9 @@ impl<T: SecretTy> Secret<T> {
         unsafe { transmute_unchecked(self) }
     }
 
+    /// Safely does a pointer-cast to [`Secret<U>`] (validated by [`Pod`]).
+    ///
+    /// Fails to compile if `T` and `U` are different sizes or `U` is more strictly aligned than `U`
     pub const fn must_cast_mut<U: SecretTy>(&mut self) -> &mut Secret<U> {
         const {
             assert!(core::mem::size_of::<T>() == core::mem::size_of::<U>());
@@ -154,13 +165,25 @@ impl<T: SecretTy> Secret<T> {
 }
 
 impl<T: SecretTy + ?Sized> Secret<T> {
+    /// Gets the inner value, bypassing [`Secret`].
+    ///
+    /// Note: This is not an `unsafe` method but may not be what you want. You should use this only at the end of a secret computation.
+    ///
+    /// If you are using this to project into a [`Secret`], use [`project_secret!`] instead (which returns a `Secret<T>` place)
     pub const fn get_nonsecret(&self) -> &T {
         &self.0
     }
 
+    /// Gets the inner value, bypassing [`Secret`].
+    ///
+    /// Note: This is not an `unsafe` method but may not be what you want. You should use this only at the end of a secret computation.
+    ///
+    /// If you are using this to project into a [`Secret`], use [`project_secret_mut!`] instead (which returns a `Secret<T>` place)
     pub const fn get_mut_nonsecret(&mut self) -> &mut T {
         &mut self.0
     }
+
+    /// Obtains a `[u8]` slice to the inner value.
     pub const fn as_byte_slice(&self) -> &Secret<[u8]> {
         let len = core::mem::size_of_val(self);
         unsafe {
@@ -168,6 +191,7 @@ impl<T: SecretTy + ?Sized> Secret<T> {
         }
     }
 
+    /// Obtains a `[u8]` slice to the inner value.
     pub const fn as_byte_slice_mut(&mut self) -> &mut Secret<[u8]> {
         let len = core::mem::size_of_val(self);
         unsafe {
@@ -189,19 +213,31 @@ impl<T: SecretTy + ?Sized> Secret<T> {
 }
 
 impl<T: SecretTy> Secret<[T]> {
+    /// Gets a raw pointer to the start of slice
+    /// This is equivalent to [`Secret<T>::as_ptr`], but returns the raw pointer from the slice itself
     pub const fn as_ptr(&self) -> *const T {
         (&raw const self.0).cast()
     }
 
+    /// Gets a raw pointer to the start of slice
+    /// This is equivalent to [`Secret<T>::as_ptr`], but returns the raw pointer from the slice itself
     pub const fn as_mut_ptr(&mut self) -> *mut T {
         (&raw mut self.0).cast()
     }
 
+    /// Computes the length of the slice.
+    ///
+    /// Note that the length of a [`Secret`] slice is not generally deemed secret, and therefore it is not wrapped in [`Secret`].
     pub const fn len(&self) -> usize {
         self.0.len()
     }
 
-    pub fn get<I: core::slice::SliceIndex<[T]>>(&self, idx: I) -> Option<&Secret<I::Output>>
+    /// Optionally indexes into `self` using [`SliceIndex`], wrapping the result in a [`Secret`]
+    ///
+    /// Returns [`None`] if `idx` is out of bounds of `self`
+    /// # Notes
+    /// Due to type system limitations, this can't be used generically without adding an `I::Output: SecretTy` bound.
+    pub fn get<I: SliceIndex<[T]>>(&self, idx: I) -> Option<&Secret<I::Output>>
     where
         I::Output: SecretTy,
     {
@@ -211,10 +247,12 @@ impl<T: SecretTy> Secret<[T]> {
         }
     }
 
-    pub fn get_mut<I: core::slice::SliceIndex<[T]>>(
-        &mut self,
-        idx: I,
-    ) -> Option<&mut Secret<I::Output>>
+    /// Optionally indexes into `self` mutably using [`SliceIndex`], wrapping the result in a [`Secret`]
+    ///
+    /// Returns [`None`] if `idx` is out of bounds of `self`
+    /// # Notes
+    /// Due to type system limitations, this can't be used generically without adding an `I::Output: SecretTy` bound.
+    pub fn get_mut<I: SliceIndex<[T]>>(&mut self, idx: I) -> Option<&mut Secret<I::Output>>
     where
         I::Output: SecretTy,
     {
@@ -224,17 +262,28 @@ impl<T: SecretTy> Secret<[T]> {
         }
     }
 
-    pub fn get_unchecked<I: core::slice::SliceIndex<[T]>>(&self, idx: I) -> &Secret<I::Output>
+    /// Performs an unchecked indexing into `self`, wrapping the result in a [`Secret`]
+    ///
+    /// # Safety
+    ///
+    /// `idx` must be inbounds of `self`, even if the result is never used
+    /// # Notes
+    /// Due to type system limitations, this can't be used generically without adding an `I::Output: SecretTy` bound.
+    pub fn get_unchecked<I: SliceIndex<[T]>>(&self, idx: I) -> &Secret<I::Output>
     where
         I::Output: SecretTy,
     {
         unsafe { &*(self.0.get_unchecked(idx) as *const _ as *const Secret<_>) }
     }
 
-    pub fn get_unchecked_mut<I: core::slice::SliceIndex<[T]>>(
-        &mut self,
-        idx: I,
-    ) -> &mut Secret<I::Output>
+    /// Performs an unchecked mutable indexing into `self`.
+    ///
+    /// # Safety
+    ///
+    /// `idx` must be inbounds of `self`, even if the result is never used
+    /// # Notes
+    /// Due to type system limitations, this can't be used generically without adding an `I::Output: SecretTy` bound.
+    pub fn get_unchecked_mut<I: SliceIndex<[T]>>(&mut self, idx: I) -> &mut Secret<I::Output>
     where
         I::Output: SecretTy,
     {
@@ -242,7 +291,7 @@ impl<T: SecretTy> Secret<[T]> {
     }
 }
 
-impl<T: SecretTy, I: core::slice::SliceIndex<[T]>> Index<I> for Secret<[T]>
+impl<T: SecretTy, I: SliceIndex<[T]>> Index<I> for Secret<[T]>
 where
     I::Output: SecretTy,
 {
@@ -252,7 +301,7 @@ where
     }
 }
 
-impl<T: SecretTy, I: core::slice::SliceIndex<[T]>> IndexMut<I> for Secret<[T]>
+impl<T: SecretTy, I: SliceIndex<[T]>> IndexMut<I> for Secret<[T]>
 where
     I::Output: SecretTy,
 {
@@ -274,6 +323,76 @@ impl<T: SecretTy> Clone for Secret<T> {
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<T: SecretTy> alloc::borrow::ToOwned for Secret<[T]> {
+    type Owned = alloc::boxed::Box<Self>;
+
+    fn to_owned(&self) -> alloc::boxed::Box<Self> {
+        self.into()
+    }
+}
+
+#[cfg(all(feature = "alloc", not(feature = "nightly-allocator_api")))]
+impl<T: SecretTy + ?Sized> From<&Secret<T>> for alloc::boxed::Box<Secret<T>> {
+    fn from(value: &Secret<T>) -> Self {
+        let layout = Layout::for_value(value);
+
+        let metadata = <T as Sealed>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
+
+        let ptr: *mut () = if layout.size() == 0 {
+            core::ptr::without_provenance_mut(layout.align())
+        } else {
+            unsafe { alloc::alloc::alloc(layout) }.cast()
+        };
+
+        if !ptr.is_null() {
+            let ptr = <T as Sealed>::from_raw_parts(ptr, metadata);
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    core::ptr::addr_of!(value.0).cast::<u8>(),
+                    ptr.cast::<u8>(),
+                    layout.size(),
+                );
+            }
+
+            unsafe { alloc::boxed::Box::from_raw(ptr as *mut Secret<T>) }
+        } else {
+            alloc::alloc::handle_alloc_error(layout)
+        }
+    }
+}
+#[cfg(all(feature = "alloc", feature = "nightly-allocator_api"))]
+impl<T: SecretTy + ?Sized, A: alloc::alloc::Allocator + Default> From<&Secret<T>>
+    for alloc::boxed::Box<Secret<T>, A>
+{
+    fn from(value: &Secret<T>) -> Self {
+        let layout = Layout::for_value(value);
+
+        let metadata = <T as Sealed>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
+
+        let alloc = A::default();
+
+        if let Ok(ptr) = alloc.allocate(layout) {
+            let ptr = ptr.as_ptr().cast::<()>();
+
+            let ptr = <T as Sealed>::from_raw_parts(ptr, metadata);
+
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    core::ptr::addr_of!(value.0).cast::<u8>(),
+                    ptr.cast::<u8>(),
+                    layout.size(),
+                );
+            }
+
+            unsafe { alloc::boxed::Box::from_raw_in(ptr as *mut Secret<T>, alloc) }
+        } else {
+            alloc::alloc::handle_alloc_error(layout)
+        }
+    }
+}
+
 impl<T: SecretTy + ?Sized> PartialEq for Secret<T> {
     fn eq(&self, other: &Self) -> bool {
         core::mem::size_of_val(self) == core::mem::size_of_val(other)
@@ -283,27 +402,134 @@ impl<T: SecretTy + ?Sized> PartialEq for Secret<T> {
 
 impl<T: SecretTy + ?Sized> Eq for Secret<T> {}
 
-#[doc(hidden)]
-pub const fn __into_secret<T: SecretTy + ?Sized>(val: *mut T) -> *mut Secret<T> {
-    val as *mut Secret<T>
-}
+#[cfg(feature = "alloc")]
+impl<T: SecretTy> Secret<T> {
+    pub fn box_zeroed() -> alloc::boxed::Box<Self> {
+        let layout = Layout::new::<T>();
 
-#[doc(hidden)]
-pub const fn __from_secret<T: SecretTy + ?Sized>(val: *mut Secret<T>) -> *mut T {
-    val as *mut T
-}
+        let ptr: *mut T = if layout.size() == 0 {
+            core::ptr::dangling_mut()
+        } else {
+            unsafe { alloc::alloc::alloc_zeroed(layout).cast() }
+        };
 
-#[macro_export]
-macro_rules! project_secret{
-    ($base:expr, $($fields:tt).+) => {
-        (*$crate::secret::__into_secret(core::ptr::addr_of!((*$crate::secret::__from_secret(core::ptr::addr_of!($base).cast_mut())). $($fields).+).cast_mut()).cast_const())
+        if ptr.is_null() {
+            alloc::alloc::handle_alloc_error(layout)
+        }
+
+        unsafe { Box::from_raw(ptr as *mut Self) }
+    }
+
+    #[cfg(feature = "nightly-allocator_api")]
+    pub fn box_zeroed_in<A: alloc::alloc::Allocator>(alloc: A) -> alloc::boxed::Box<Self, A> {
+        let layout = Layout::new::<T>();
+
+        let Ok(ptr) = alloc.allocate(layout) else {
+            alloc::alloc::handle_alloc_error(layout)
+        };
+
+        unsafe { Box::from_raw_in(ptr.as_ptr().cast::<T>() as *mut Self, alloc) }
     }
 }
 
+#[cfg(feature = "alloc")]
+impl<T: SecretTy> Secret<[T]> {
+    pub fn box_zeroed_slice(elems: usize) -> alloc::boxed::Box<Self> {
+        let Ok(layout) = Layout::array::<T>(elems) else {
+            panic!("{elems} exceeded `isize` bounds")
+        };
+
+        let ptr: *mut T = if layout.size() == 0 {
+            core::ptr::dangling_mut()
+        } else {
+            unsafe { alloc::alloc::alloc_zeroed(layout).cast() }
+        };
+
+        if ptr.is_null() {
+            alloc::alloc::handle_alloc_error(layout)
+        }
+
+        unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, elems) as *mut Self) }
+    }
+
+    #[cfg(feature = "nightly-allocator_api")]
+    pub fn box_zeroed_slice_in<A: alloc::alloc::Allocator>(
+        elems: usize,
+        alloc: A,
+    ) -> alloc::boxed::Box<Self, A> {
+        let Ok(layout) = Layout::array::<T>(elems) else {
+            panic!("{elems} exceeded `isize` bounds")
+        };
+
+        let Ok(ptr) = alloc.allocate(layout) else {
+            alloc::alloc::handle_alloc_error(layout)
+        };
+
+        unsafe {
+            Box::from_raw_in(
+                core::ptr::slice_from_raw_parts_mut(ptr.as_ptr().cast::<T>(), elems) as *mut Self,
+                alloc,
+            )
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T: SecretTy> Secret<T> {
+    /// Reads a [`Secret<T>`] from an input stream.
+    /// Fails unless it can read the whole value.
+    ///
+    /// Note that there is no `write` counterpart. Instead, you must call [`Secret::get_nonsecret`] to get the inner value, then write that to demonstrate that the value is no longer deemed secret.
+    pub fn read<R: std::io::Read>(mut read: R) -> std::io::Result<Self> {
+        let mut this = Self::zeroed();
+
+        let bytes = &mut this.as_byte_slice_mut().0;
+
+        read.read_exact(bytes)?;
+
+        Ok(this)
+    }
+}
+
+#[doc(hidden)]
+pub const fn __into_secret<T: SecretTy + ?Sized>(x: &T) -> &Secret<T> {
+    unsafe { core::mem::transmute(x) }
+}
+
+#[doc(hidden)]
+pub const fn __into_secret_mut<T: SecretTy + ?Sized>(x: &mut T) -> &mut Secret<T> {
+    unsafe { core::mem::transmute(x) }
+}
+
+/// Projects a field of a [`Secret`] immutable place.
+///
+/// The resulting expression is an immutable place expression, with the following characteristics:
+/// * If `$base` has type [`Secret<T>`], and `$($fields).+` are (potentially nested) fields of type `T`, with a type of `U`, then the type is [`Secret<U>`],
+/// * The address of the place is
+///
+/// Due to limitations in `Rust`, this cannot project to a field of a `#[repr(packed)]` type.
+///
+/// It also cannot project to a field that has a type which is not a [`SecretTy`]
+#[macro_export]
+macro_rules! project_secret{
+    ($base:expr, $($fields:tt).+) => {
+        (*$crate::secret::__into_secret(&$crate::secret::Secret::get_nonsecret(&$base). ($fields).+))
+    }
+}
+
+/// Projects a field of a [`Secret`] mutable place.
+///
+/// The resulting expression is an mutable place expression, with the following characteristics:
+/// * If `$base` has type [`Secret<T>`], and `$($fields).+` are (potentially nested) fields of type `T`, with a type of `U`, then the type is [`Secret<U>`],
+/// * The address of the place is
+///
+/// Due to limitations in `Rust`, this cannot project to a field of a `#[repr(packed)]` type.
+///
+/// It also cannot project to a field that has a type which is not a [`SecretTy`]
 #[macro_export]
 macro_rules! project_secret_mut{
     ($base:expr, $($fields:tt).+) => {
-        (*$crate::secret::__into_secret(core::ptr::addr_of!((*$crate::secret::__from_secret(core::ptr::addr_of!($base).cast_mut())). $($fields).+).cast_mut()).cast_const())
+        (*$crate::secret::__into_secret_mut(&mut $crate::secret::Secret::get_mut_nonsecret(&mut $base). ($fields).+))
     }
 }
 

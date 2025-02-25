@@ -1,14 +1,18 @@
 mod private {
     pub trait Sealed {
+        type Metadata: Sized + Copy + Eq;
         fn foo(&self) -> &Self {
             // keep SecretTy from being dyn-compatible
             self
         }
+
+        fn into_raw_parts(ptr: *mut Self) -> (*mut (), Self::Metadata);
+        fn from_raw_parts(ptr: *mut (), meta: Self::Metadata) -> *mut Self;
     }
 }
 
 use bytemuck::Pod;
-use private::Sealed;
+pub(crate) use private::Sealed;
 
 /// [`SecretTy`] is a type that can be used with [`Secret<T>`][crate::secret::Secret]
 ///
@@ -21,8 +25,30 @@ use private::Sealed;
 /// * If `Self: Sized`, then `Self: Copy + Pod`.
 pub trait SecretTy: Sealed {}
 
-impl<T: Pod + Eq> Sealed for T {}
+impl<T: Pod + Eq> Sealed for T {
+    type Metadata = ();
+
+    fn from_raw_parts(ptr: *mut (), _: Self::Metadata) -> *mut Self {
+        ptr.cast()
+    }
+
+    fn into_raw_parts(ptr: *mut Self) -> (*mut (), Self::Metadata) {
+        (ptr.cast(), ())
+    }
+}
 impl<T: Pod + Eq> SecretTy for T {}
 
-impl<T: Sealed> Sealed for [T] {}
+impl<T: Sealed> Sealed for [T] {
+    type Metadata = usize;
+
+    fn from_raw_parts(ptr: *mut (), meta: Self::Metadata) -> *mut Self {
+        core::ptr::slice_from_raw_parts_mut(ptr.cast(), meta)
+    }
+
+    fn into_raw_parts(ptr: *mut Self) -> (*mut (), Self::Metadata) {
+        let len = ptr.len();
+
+        (ptr.cast(), len)
+    }
+}
 impl<T: SecretTy> SecretTy for [T] {}
