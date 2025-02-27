@@ -35,10 +35,10 @@ use crate::traits::{Sealed, SecretTy};
 /// [`Index`] and [`IndexMut`] are available for slices and return references to [`Secret`] values within the slice.
 ///
 /// Arithmetic operations (like [`Add`][core::ops::Add]) use wrapping arithmetic (unless `T` is wrapped in [`core::num::Saturating`], in which case Saturating arithmetic is used) and do not panic on overflow.
-/// Note that [`Div`][core::ops::Div] and [`Rem`][core::ops::Rem] are not implemented
+/// Note that [`Div`][core::ops::Div] and [`Rem`][core::ops::Rem] are not implemented intentional.
 ///
 /// [`core::fmt::Debug`] allows printing [`Secret`], but will not print the interior value (Instead it prints an opaque string).
-/// There is no [`core::fmt::Display`] (or other trait)
+/// There is no [`core::fmt::Display`] (or other trait) implementations.
 ///
 #[repr(transparent)]
 pub struct Secret<T: SecretTy + ?Sized>(T);
@@ -56,7 +56,7 @@ impl<T: SecretTy + ?Sized> core::fmt::Debug for Secret<T> {
     }
 }
 
-// SAFETY: The impls of `SecretTy` mean that
+// SAFETY: The impls of `SecretTy` mean that `T: Pod``
 unsafe impl<T: SecretTy> Zeroable for Secret<T> {}
 
 impl<T: SecretTy> From<T> for Secret<T> {
@@ -169,7 +169,7 @@ impl<T: SecretTy + ?Sized> Secret<T> {
     ///
     /// Note: This is not an `unsafe` method but may not be what you want. You should use this only at the end of a secret computation.
     ///
-    /// If you are using this to project into a [`Secret`], use [`project_secret!`] instead (which returns a `Secret<T>` place)
+    /// If you are using this to project into a [`Secret`], use [`project_secret!`][crate::project_secret] instead (which returns a [`Secret<T>`] place)
     pub const fn get_nonsecret(&self) -> &T {
         &self.0
     }
@@ -178,7 +178,7 @@ impl<T: SecretTy + ?Sized> Secret<T> {
     ///
     /// Note: This is not an `unsafe` method but may not be what you want. You should use this only at the end of a secret computation.
     ///
-    /// If you are using this to project into a [`Secret`], use [`project_secret_mut!`] instead (which returns a `Secret<T>` place)
+    /// If you are using this to project into a [`Secret`], use [`project_secret_mut!`[crate::project_secret_mut] instead (which returns a [`Secret<T>`] place)
     pub const fn get_mut_nonsecret(&mut self) -> &mut T {
         &mut self.0
     }
@@ -333,6 +333,7 @@ impl<T: SecretTy> alloc::borrow::ToOwned for Secret<[T]> {
 }
 
 #[cfg(all(feature = "alloc", not(feature = "nightly-allocator_api")))]
+#[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "alloc")))]
 impl<T: SecretTy + ?Sized> From<&Secret<T>> for alloc::boxed::Box<Secret<T>> {
     fn from(value: &Secret<T>) -> Self {
         let layout = Layout::for_value(value);
@@ -363,6 +364,10 @@ impl<T: SecretTy + ?Sized> From<&Secret<T>> for alloc::boxed::Box<Secret<T>> {
     }
 }
 #[cfg(all(feature = "alloc", feature = "nightly-allocator_api"))]
+#[cfg_attr(
+    feature = "nightly-docs",
+    doc(cfg(all(feature = "alloc", feature = "nightly-allocator_api")))
+)]
 impl<T: SecretTy + ?Sized, A: alloc::alloc::Allocator + Default> From<&Secret<T>>
     for alloc::boxed::Box<Secret<T>, A>
 {
@@ -404,6 +409,8 @@ impl<T: SecretTy + ?Sized> Eq for Secret<T> {}
 
 #[cfg(feature = "alloc")]
 impl<T: SecretTy> Secret<T> {
+    /// Creates a [`Box`] containing a zereod `T`
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "alloc")))]
     pub fn box_zeroed() -> alloc::boxed::Box<Self> {
         let layout = Layout::new::<T>();
 
@@ -420,6 +427,11 @@ impl<T: SecretTy> Secret<T> {
         unsafe { Box::from_raw(ptr as *mut Self) }
     }
 
+    /// Creates a [`Box`] containing a zeroed `T` in `alloc`
+    #[cfg_attr(
+        feature = "nightly-docs",
+        doc(cfg(all(feature = "alloc", feature = "nightly-allocator_api")))
+    )]
     #[cfg(feature = "nightly-allocator_api")]
     pub fn box_zeroed_in<A: alloc::alloc::Allocator>(alloc: A) -> alloc::boxed::Box<Self, A> {
         let layout = Layout::new::<T>();
@@ -434,6 +446,8 @@ impl<T: SecretTy> Secret<T> {
 
 #[cfg(feature = "alloc")]
 impl<T: SecretTy> Secret<[T]> {
+    /// Creates a [`Box`] containing `elems` zeroed values of type `T`
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "alloc")))]
     pub fn box_zeroed_slice(elems: usize) -> alloc::boxed::Box<Self> {
         let Ok(layout) = Layout::array::<T>(elems) else {
             panic!("{elems} exceeded `isize` bounds")
@@ -452,7 +466,11 @@ impl<T: SecretTy> Secret<[T]> {
         unsafe { Box::from_raw(core::ptr::slice_from_raw_parts_mut(ptr, elems) as *mut Self) }
     }
 
-    #[cfg(feature = "nightly-allocator_api")]
+    /// Creates a [`Box`] containing `elems` zeroed values of type `T` in `alloc`
+    #[cfg_attr(
+        feature = "nightly-docs",
+        doc(cfg(all(feature = "alloc", feature = "nightly-allocator_api")))
+    )]
     pub fn box_zeroed_slice_in<A: alloc::alloc::Allocator>(
         elems: usize,
         alloc: A,
@@ -475,11 +493,13 @@ impl<T: SecretTy> Secret<[T]> {
 }
 
 #[cfg(feature = "std")]
+
 impl<T: SecretTy> Secret<T> {
     /// Reads a [`Secret<T>`] from an input stream.
     /// Fails unless it can read the whole value.
     ///
     /// Note that there is no `write` counterpart. Instead, you must call [`Secret::get_nonsecret`] to get the inner value, then write that to demonstrate that the value is no longer deemed secret.
+    #[cfg_attr(feature = "nightly-docs", doc(cfg(feature = "std")))]
     pub fn read<R: std::io::Read>(mut read: R) -> std::io::Result<Self> {
         let mut this = Self::zeroed();
 
@@ -875,6 +895,9 @@ macro_rules! impl_secret_neg{
                 }
             }
 
+            /// Negates the secret value in place
+            ///
+            /// This is equivalent to `self.set(-self.clone())`
             impl Secret<$ty>{
                 pub const fn negate_in_place(&mut self){
                     unsafe{core::ptr::write(self, Self::new((*self.get_nonsecret()).wrapping_neg()))}
@@ -900,9 +923,97 @@ macro_rules! impl_secret_logic {
             }
 
             impl Secret<$ty>{
+                /// Inverts the secret value in place
+                ///
+                /// This is equivalent to `self.set(!self.clone())`
                 pub const fn not_in_place(&mut self){
                     let val = *self.get_nonsecret();
                     self.set(!val)
+                }
+            }
+        )*
+    }
+}
+
+macro_rules! impl_secret_shift {
+    ($($ty:ty),*) => {
+        $(
+            impl core::ops::Shl<u32> for Secret<$ty> {
+                type Output = Self;
+
+                fn shl(self, val: u32) -> Self {
+                    Self::new(self.into_inner_nonsecret() << val)
+                }
+            }
+            impl core::ops::Shr<u32> for Secret<$ty> {
+                type Output = Self;
+
+                fn shr(self, val: u32) -> Self {
+                    Self::new(self.into_inner_nonsecret() >> val )
+                }
+            }
+            impl core::ops::ShlAssign<u32> for Secret<$ty> {
+                fn shl_assign(&mut self, val: u32){
+                    let r = *self.get_nonsecret();
+
+                    self.set(r << val)
+                }
+            }
+            impl core::ops::ShrAssign<u32> for Secret<$ty> {
+                fn shr_assign(&mut self, val: u32) {
+                    let r = *self.get_nonsecret();
+
+                    self.set(r >> val)
+                }
+            }
+
+            impl Secret<$ty> {
+                /// Rotate `self` left `bits` bits.
+                #[inline(always)]
+                pub const fn rotate_left(self, bits: u32) -> Self{
+                    Self::new(self.into_inner_nonsecret().rotate_left(bits))
+                }
+
+                /// Rotate `self` right `bits` bits.
+                #[inline(always)]
+                pub const fn rotate_right(self, bits: u32) -> Self{
+                    Self::new(self.into_inner_nonsecret().rotate_right(bits))
+                }
+            }
+        )*
+    }
+}
+
+macro_rules! impl_secret_shift_self {
+    ($($ty:ty),*) => {
+        $(
+            impl core::ops::Shl<$ty> for Secret<$ty> {
+                type Output = Self;
+
+                fn shl(self, val: $ty) -> Self {
+                    Self::new(self.into_inner_nonsecret() << val)
+                }
+            }
+            impl core::ops::Shr<$ty> for Secret<$ty> {
+                type Output = Self;
+
+                fn shr(self, val: $ty) -> Self {
+                    Self::new(self.into_inner_nonsecret() << val )
+                }
+            }
+
+            impl core::ops::ShlAssign<$ty> for Secret<$ty> {
+                fn shl_assign(&mut self, val: $ty) {
+                    let r = *self.get_nonsecret();
+
+                    self.set(r << val)
+                }
+            }
+            impl core::ops::ShrAssign<$ty> for Secret<$ty> {
+                fn shr_assign(&mut self, val: $ty){
+                    let r = *self.get_nonsecret();
+
+                    self.set(r >> val)
                 }
             }
         )*
@@ -917,6 +1028,9 @@ impl_secret_logic! {
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize
 }
 
+impl_secret_shift! {u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize}
+impl_secret_shift_self! {u8, u16, u64, u128, usize, i8, i16, i32, i64, i128, isize}
+
 impl Secret<u8> {
     /// Looks up `self`in a substituion box given by a non-secret array.
     /// This performs an operation that is defensive against side-channels created by both compiler optimizations and cache ops
@@ -926,6 +1040,7 @@ impl Secret<u8> {
         Secret::new(unsafe { sbox_lookup(*self.get_nonsecret(), core::ptr::from_ref(sbox)) })
     }
 
+    /// Same as [`Secret::sbox_lookup`] but allows an sbox computed from a secret input.
     pub fn sbox_lookup_secret(&self, secret_sbox: &Secret<[u8; 256]>) -> Secret<u8> {
         // SAFETY:
         // `sbox` is guaranteed dereferenceable

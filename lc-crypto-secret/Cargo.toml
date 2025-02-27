@@ -11,3 +11,4 @@ lc-crypto-primitives.workspace = true
 std = ["alloc"]
 alloc = []
 nightly-allocator_api = []
+nightly-docs = []
