@@ -15,7 +15,7 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.dependencies]
-bytemuck = { git = "https://github.com/Lokathor/bytemuck", rev = "6751565", version = "1.21", features = [
+bytemuck = { git = "https://github.com/Lokathor/bytemuck", version = "1.21", features = [
     "min_const_generics",
     "must_cast",
     "zeroable_maybe_uninit",
