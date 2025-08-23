@@ -1,4 +1,4 @@
-#![feature(trivial_bounds, array_chunks)]
+#![feature(trivial_bounds)]
 #![cfg_attr(not(feature = "std"), no_std)]
 //! Library for providing random number generators and generation routines
 //!

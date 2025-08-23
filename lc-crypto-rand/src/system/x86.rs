@@ -36,7 +36,9 @@ impl X86Rand {
 ))]
 impl CsRand for X86Rand {
     fn next_bytes(&mut self, bytes: &mut [u8]) -> lc_crypto_primitives::error::Result<()> {
-        let mut chunks = bytes.array_chunks_mut();
+        use lc_crypto_primitives::traits::ByteArray;
+
+        let mut chunks = ByteArray::array_chunks_mut(bytes);
         for chunk in &mut chunks {
             *chunk = self.poll_word().to_ne_bytes();
         }

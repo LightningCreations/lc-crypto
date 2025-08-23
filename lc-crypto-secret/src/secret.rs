@@ -1,5 +1,6 @@
 use core::{
     alloc::Layout,
+    iter::FusedIterator,
     ops::{Index, IndexMut},
     slice::SliceIndex,
 };
@@ -425,32 +426,15 @@ impl<T: SecretTy + ?Sized> Eq for Secret<T> {}
 
 impl Secret<[u8]> {
     pub fn array_chunks<A: ByteArray>(&self) -> ArrayChunks<'_, A> {
-        const { assert!(A::LEN != 0) }
-        let len = self.len();
-        let rem = len % A::LEN;
-        let tlen = len - rem;
-
-        let (a, b) = self.get_nonsecret().split_at(tlen);
-
-        let len = tlen / A::LEN;
-
-        let nslice = unsafe { core::slice::from_raw_parts(a as *const _ as *const A, len) };
-
-        ArrayChunks {
-            iter: nslice.iter(),
-            rem: b,
-        }
+        ArrayChunks(A::array_chunks(self.get_nonsecret()))
     }
 }
 
-pub struct ArrayChunks<'a, A: 'static> {
-    iter: core::slice::Iter<'a, A>,
-    rem: &'a [u8],
-}
+pub struct ArrayChunks<'a, A: 'static>(lc_crypto_primitives::traits::ArrayChunks<'a, A>);
 
 impl<'a, A: ByteArray> ArrayChunks<'a, A> {
     pub fn remainder(&self) -> &'a Secret<[u8]> {
-        Secret::from_ref(self.rem)
+        Secret::from_ref(self.0.remainder())
     }
 }
 
@@ -458,9 +442,27 @@ impl<'a, A: ByteArray> Iterator for ArrayChunks<'a, A> {
     type Item = &'a Secret<A>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.iter.next().map(Secret::from_ref)
+        self.0.next().map(Secret::from_ref)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
     }
 }
+
+impl<'a, A: ByteArray> ExactSizeIterator for ArrayChunks<'a, A> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a, A: ByteArray> DoubleEndedIterator for ArrayChunks<'a, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(Secret::from_ref)
+    }
+}
+
+impl<'a, A: ByteArray> FusedIterator for ArrayChunks<'a, A> {}
 
 #[cfg(feature = "alloc")]
 impl<T: SecretTy> Secret<T> {

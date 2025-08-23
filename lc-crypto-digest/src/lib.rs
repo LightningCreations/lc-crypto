@@ -1,6 +1,6 @@
 use lc_crypto_primitives::{
     digest::RawDigest,
-    traits::{ByteArray, Remainder, SecretTy},
+    traits::{ByteArray, SecretTy},
 };
 use lc_crypto_secret::secret::Secret;
 

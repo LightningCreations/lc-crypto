@@ -3,40 +3,6 @@ mod private {
 
     pub trait Sealed {}
 
-    pub struct ArrayChunks<'a, T: 'a, const N: usize>(
-        pub(crate) core::slice::ArrayChunks<'a, T, N>,
-    );
-
-    impl<'a, T: 'a, const N: usize> Iterator for ArrayChunks<'a, T, N> {
-        type Item = &'a [T; N];
-
-        fn next(&mut self) -> Option<Self::Item> {
-            self.0.next()
-        }
-
-        fn size_hint(&self) -> (usize, Option<usize>) {
-            self.0.size_hint()
-        }
-
-        fn nth(&mut self, n: usize) -> Option<Self::Item> {
-            self.0.nth(n)
-        }
-    }
-
-    impl<'a, T: 'a, const N: usize> DoubleEndedIterator for ArrayChunks<'a, T, N> {
-        fn next_back(&mut self) -> Option<Self::Item> {
-            self.0.next_back()
-        }
-    }
-
-    impl<'a, T: 'a, const N: usize> ExactSizeIterator for ArrayChunks<'a, T, N> {
-        fn len(&self) -> usize {
-            self.0.len()
-        }
-    }
-
-    impl<'a, T: 'a, const N: usize> FusedIterator for ArrayChunks<'a, T, N> {}
-
     pub trait SealedSecret {
         type Metadata: Sized + Copy + Eq;
         fn foo(&self) -> &Self {
@@ -52,32 +18,123 @@ mod private {
 use core::iter::FusedIterator;
 
 use bytemuck::{Pod, TransparentWrapper};
-use private::{ArrayChunks, Sealed};
+use private::Sealed;
 
-pub trait Remainder<'a>: 'a + Sealed {
-    fn remainder(&self) -> &'a [u8];
+#[derive(Clone)]
+pub struct ArrayChunks<'a, A> {
+    inner: core::slice::Iter<'a, A>,
+    rem: &'a [u8],
 }
 
-impl<'a, T: 'a + Copy, const N: usize> Sealed for ArrayChunks<'a, T, N> {}
-
-impl<'a, const N: usize> Remainder<'a> for ArrayChunks<'a, u8, N> {
-    fn remainder(&self) -> &'a [u8] {
-        self.0.remainder()
+impl<'a, A: ByteArray> ArrayChunks<'a, A> {
+    pub const fn remainder(&self) -> &'a [u8] {
+        self.rem
     }
 }
 
+impl<'a, A: ByteArray> Iterator for ArrayChunks<'a, A> {
+    type Item = &'a A;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<'a, A: ByteArray> DoubleEndedIterator for ArrayChunks<'a, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl<'a, A: ByteArray> ExactSizeIterator for ArrayChunks<'a, A> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<'a, A: ByteArray> FusedIterator for ArrayChunks<'a, A> {}
+
+pub struct ArrayChunksMut<'a, A> {
+    inner: core::slice::IterMut<'a, A>,
+    rem: &'a mut [u8],
+}
+
+impl<'a, A: ByteArray> ArrayChunksMut<'a, A> {
+    pub fn into_remainder(self) -> &'a mut [u8] {
+        self.rem
+    }
+
+    pub const fn remainder_mut(&mut self) -> &mut [u8] {
+        self.rem
+    }
+}
+
+impl<'a, A: ByteArray> Iterator for ArrayChunksMut<'a, A> {
+    type Item = &'a mut A;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl<'a, A: ByteArray> DoubleEndedIterator for ArrayChunksMut<'a, A> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back()
+    }
+}
+
+impl<'a, A: ByteArray> ExactSizeIterator for ArrayChunksMut<'a, A> {
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+}
+
+impl<'a, A: ByteArray> FusedIterator for ArrayChunksMut<'a, A> {}
+
 pub trait ByteArray: Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + 'static {
     const LEN: usize;
-    type ArrayChunks<'a>: Iterator<Item = &'a Self>
-        + ExactSizeIterator
-        + DoubleEndedIterator
-        + FusedIterator
-        + Remainder<'a>
-        + 'a
-    where
-        Self: 'a;
 
-    fn array_chunks<'a>(sl: &'a [u8]) -> Self::ArrayChunks<'a>;
+    fn array_chunks<'a>(sl: &'a [u8]) -> ArrayChunks<'a, Self> {
+        const { assert!(Self::LEN != 0) }
+        let len = sl.len();
+        let rem = len % Self::LEN;
+        let tlen = len - rem;
+
+        let (a, b) = sl.split_at(tlen);
+
+        let len = tlen / Self::LEN;
+
+        let nslice = unsafe { core::slice::from_raw_parts(a as *const _ as *const Self, len) };
+
+        ArrayChunks {
+            inner: nslice.iter(),
+            rem: b,
+        }
+    }
+
+    fn array_chunks_mut<'a>(sl: &'a mut [u8]) -> ArrayChunksMut<'a, Self> {
+        const { assert!(Self::LEN != 0) }
+        let len = sl.len();
+        let rem = len % Self::LEN;
+        let tlen = len - rem;
+
+        let (a, b) = sl.split_at_mut(tlen);
+
+        let len = tlen / Self::LEN;
+
+        let nslice = unsafe { core::slice::from_raw_parts_mut(a as *mut _ as *mut Self, len) };
+
+        ArrayChunksMut {
+            inner: nslice.iter_mut(),
+            rem: b,
+        }
+    }
 
     fn last_mut(&mut self) -> &mut u8 {
         const {
@@ -120,15 +177,6 @@ pub trait ByteArray: Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + 
 impl<const N: usize> Sealed for [u8; N] {}
 impl<const N: usize> ByteArray for [u8; N] {
     const LEN: usize = N;
-
-    type ArrayChunks<'a> = private::ArrayChunks<'a, u8, N>;
-
-    fn array_chunks<'a>(sl: &'a [u8]) -> Self::ArrayChunks<'a> {
-        const {
-            assert!(N != 0);
-        }
-        private::ArrayChunks(sl.array_chunks())
-    }
 }
 
 #[doc(hidden)]

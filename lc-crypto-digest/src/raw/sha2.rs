@@ -239,7 +239,7 @@ pub struct Sha2<W, const BITS: u32, O> {
 impl<W: Sha2Word, const BITS: u32, O: ByteArray> Sha2<W, BITS, O> {
     pub const fn new_with_iv(iv: [W; 8]) -> Self {
         const {
-            assert!(BITS < W::BITS * 8);
+            assert!(BITS <= W::BITS * 8);
             assert!((BITS as usize + 7) / 8 == O::LEN);
         }
         Self {
