@@ -21,114 +21,59 @@ use core::mem::ManuallyDrop;
 pub unsafe fn eq_bytes_secure(a: *const u8, b: *const u8, len: usize) -> bool {
     let mut res: u8;
     cfg_match::cfg_match! {
-        all(target_arch = "x86_64", target_feature = "sse4.1") => unsafe { core::arch::asm!{
-            "xor eax, eax",
-            "mov r8, 1",
-            "cmp rcx, 16",
-            "jb 3f",
-            "2:",
-            "movdqu xmm0, xmmword ptr [rdi]",
-            "movdqu xmm1, xmmword ptr [rsi]",
-            "ptest xmm0, xmm1",
-            "cmovnc rax, r8",
-            "lea rdi, [rdi+16]",
-            "lea rsi, [rsi+16]",
-            "lea rcx, [rcx-16]",
-            "cmp rcx, 16",
-            "jae 2b",
-            "3:",
-            "cmp rcx, 8",
-            "jb 3f",
-            "mov rdx, qword ptr [rdi]",
-            "cmp rdx, qword ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+8]",
-            "lea rsi, [rsi+8]",
-            "lea rcx, [rcx-8]",
-            "3:",
-            "cmp rcx, 4",
-            "jb 3f",
-            "mov edx, dword ptr [rdi]",
-            "cmp edx, dword ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+4]",
-            "lea rsi, [rsi+4]",
-            "lea rcx, [rcx-4]",
-            "3:",
-            "cmp rcx, 2",
-            "jb 3f",
-            "mov dx, word ptr [rdi]",
-            "cmp dx, word ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+2]",
-            "lea rsi, [rsi+2]",
-            "lea rcx, [rcx-2]",
-            "3:",
-            "cmp rcx, 1",
-            "jb 3f",
-            "mov dl, byte ptr [rdi]",
-            "cmp dl, byte ptr [rsi]",
-            "cmovne rax, r8",
-            "3:",
-            inout("rdi") a=> _,
-            inout("rsi") b=> _,
-            inout("rcx") len => _,
-            out("rdx") _,
-            out("al") res,
-            out("r8") _,
-            out("xmm0") _,
-            out("xmm1") _,
-            options(nostack, readonly, pure),
-        } },
-        target_arch = "x86_64" => unsafe { core::arch::asm!{
-            "xor eax, eax",
-            "mov r8, 1",
-            "cmp rcx, 8",
-            "jb 3f",
-            "2:",
-            "mov rdx, qword ptr [rdi]",
-            "cmp rdx, qword ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+8]",
-            "lea rsi, [rsi+8]",
-            "lea rcx, [rcx-8]",
-            "cmp rcx, 8",
-            "jae 2b",
-            "3:",
-            "cmp rcx, 4",
-            "jb 3f",
-            "mov edx, dword ptr [rdi]",
-            "cmp edx, dword ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+4]",
-            "lea rsi, [rsi+4]",
-            "lea rcx, [rcx-4]",
-            "3:",
-            "cmp rcx, 2",
-            "jb 3f",
-            "mov dx, word ptr [rdi]",
-            "cmp dx, word ptr [rsi]",
-            "cmovne rax, r8",
-            "lea rdi, [rdi+2]",
-            "lea rsi, [rsi+2]",
-            "lea rcx, [rcx-2]",
-            "3:",
-            "cmp rcx, 1",
-            "jb 3f",
-            "mov dl, byte ptr [rdi]",
-            "cmp dl, byte ptr [rsi]",
-            "cmovne rax, r8",
-            "3:",
-            inout("rdi") a=> _,
-            inout("rsi") b=> _,
-            inout("rcx") len => _,
-            out("rdx") _,
-            out("al") res,
-            out("r8") _,
-            out("xmm0") _,
-            out("xmm1") _,
-            options(nostack, readonly, pure),
-        } },
+        target_arch = "x86_64" => unsafe {
+        let is_sse = crate::is_x86_feature_detected!("sse4.1");
+        let is_avx = crate::is_x86_feature_detected!("avx");
+        core::arch::asm!{
+                "xor eax, eax",
+                "mov r8, 1",
+                "cmp rcx, 8",
+                "jb 3f",
+                "2:",
+                "mov rdx, qword ptr [rdi]",
+                "cmp rdx, qword ptr [rsi]",
+                "cmovne rax, r8",
+                "lea rdi, [rdi+8]",
+                "lea rsi, [rsi+8]",
+                "lea rcx, [rcx-8]",
+                "cmp rcx, 8",
+                "jae 2b",
+                "3:",
+                "cmp rcx, 4",
+                "jb 3f",
+                "mov edx, dword ptr [rdi]",
+                "cmp edx, dword ptr [rsi]",
+                "cmovne rax, r8",
+                "lea rdi, [rdi+4]",
+                "lea rsi, [rsi+4]",
+                "lea rcx, [rcx-4]",
+                "3:",
+                "cmp rcx, 2",
+                "jb 3f",
+                "mov dx, word ptr [rdi]",
+                "cmp dx, word ptr [rsi]",
+                "cmovne rax, r8",
+                "lea rdi, [rdi+2]",
+                "lea rsi, [rsi+2]",
+                "lea rcx, [rcx-2]",
+                "3:",
+                "cmp rcx, 1",
+                "jb 3f",
+                "mov dl, byte ptr [rdi]",
+                "cmp dl, byte ptr [rsi]",
+                "cmovne rax, r8",
+                "3:",
+                inout("rdi") a=> _,
+                inout("rsi") b=> _,
+                inout("rcx") len => _,
+                out("rdx") _,
+                out("al") res,
+                out("r8") _,
+                out("xmm0") _,
+                out("xmm1") _,
+                options(nostack, readonly, pure),
+            }
+    },
         // target_arch = "x86" => unsafe { core::arch::asm!{
         //     "xor eax, eax",
         //     "cmp ecx, 4",
@@ -192,15 +137,22 @@ pub unsafe fn write_bytes_explicit(a: *mut u8, val: u8, len: usize) {
 
     cfg_match::cfg_match! {
         target_arch = "x86_64" => unsafe {
+            let splat_xmm = ::core::arch::x86_64::_mm_set_epi64x(splat as i64, splat as i64);
             core::arch::asm!{
-                "cmp rcx, 8",
+                "cmp rcx, 16",
                 "jb 3f",
                 "2:",
+                "movdqu xmmword ptr [rdi], xmm0",
+                "lea rdi, [rdi+16]",
+                "lea rcx, [rcx-16]",
+                "cmp rcx, 16",
+                "jae 2b",
+                "3:",
+                "cmp rcx, 8",
+                "jb 3f",
                 "mov qword ptr [rdi], rax",
                 "lea rdi, [rdi+8]",
                 "lea rcx, [rcx-8]",
-                "cmp rcx, 8",
-                "jae 2b",
                 "3:",
                 "cmp rcx, 4",
                 "jb 3f",
@@ -221,9 +173,10 @@ pub unsafe fn write_bytes_explicit(a: *mut u8, val: u8, len: usize) {
                 inout("rdi") a => _,
                 inout("rcx") len => _,
                 in("rax") splat,
+                in("xmm0") splat_xmm,
                 options(nostack),
             }
-        },
+        } ,
         _ => {
             let _ = unsafe{a.add(len)};
 
@@ -246,6 +199,10 @@ pub unsafe fn write_bytes_explicit(a: *mut u8, val: u8, len: usize) {
 /// * Adding `b` to `ptr` must not wrap arround the address space.
 ///
 /// Note that while the compiler may not assume the particular value of `b`, it's allowed to assume that `b` is a value that satisfies the above constraints.
+#[cfg_attr(
+    all(doc, not(feature = "nightly-docs")),
+    doc = "[`pointer::add`]: https://doc.rust-lang.org/core/primitive.pointer.html#method.add"
+)]
 #[inline(always)]
 pub unsafe fn add_unpredicatable<T>(b: usize, ptr: *const T) -> *const T {
     const { assert!(core::mem::size_of::<T>() != 0) }
@@ -324,7 +281,7 @@ pub unsafe fn sbox_lookup(b: u8, sbox_ptr: *const [u8; 256]) -> u8 {
                 "lea {ptr}, [{ptr}+32]",
                 "dec {ctr:e}",
                 "jne 2b",
-                scratch = inout(reg) 0u64=> _ ,
+                scratch = out(reg) _ ,
                 off = inout(reg) (b>>3) as usize=>_,
                 ptr = inout(reg) sbox_ptr=>_,
                 res = out(reg) buf,
@@ -335,9 +292,20 @@ pub unsafe fn sbox_lookup(b: u8, sbox_ptr: *const [u8; 256]) -> u8 {
             val = ((buf) >> 8 *((b&0x7) as u32)) as u8;
         },
         _ => {
-            let box_copy = core::hint::black_box(unsafe{sbox_ptr.cast::<[u8;256]>().read()});
+            let mut scratch = 0usize;
+            let ptr = sbox_ptr.cast::<usize>();
 
-            val = unsafe{add_unpredicatable(b as usize, box_copy.as_ptr()).read()}
+            let _ = unsafe{sbox_ptr.add(256)};
+
+            let (idx, pos) = core::hint::black_box(((b as usize)/core::mem::size_of::<usize>(), (b as usize)%core::mem::size_of::<usize>()));
+
+            for i in 0..(256/core::mem::size_of::<usize>()) {
+                let mask = core::hint::black_box(((i == idx) as usize).wrapping_sub(1));
+
+                scratch = core::hint::black_box(core::hint::black_box(scratch & mask) | core::hint::black_box(unsafe{ptr.add(i).read_unaligned()} & !mask));
+            }
+
+            val = ((scratch) >> 8 *(pos as u32)) as u8;
         }
     }
 

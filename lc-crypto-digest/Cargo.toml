@@ -1,0 +1,9 @@
+[package]
+name = "lc-crypto-digest"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lc-crypto-primitives.workspace = true
+lc-crypto-secret.workspace = true
+bytemuck.workspace = true

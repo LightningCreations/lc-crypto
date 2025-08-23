@@ -1,5 +1,11 @@
 [workspace]
-members = ["lc-crypto-primitives", "lc-crypto-secret"]
+members = [
+    "lc-crypto-bignum",
+    "lc-crypto-digest",
+    "lc-crypto-primitives",
+    "lc-crypto-rand",
+    "lc-crypto-secret",
+]
 resolver = "3"
 
 [workspace.package]
@@ -9,7 +15,6 @@ edition = "2024"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.dependencies]
-libc = { version = "0.2", default-features = false }
 bytemuck = { git = "https://github.com/Lokathor/bytemuck", rev = "6751565", version = "1.21", features = [
     "min_const_generics",
     "must_cast",
@@ -17,7 +22,13 @@ bytemuck = { git = "https://github.com/Lokathor/bytemuck", rev = "6751565", vers
     "zeroable_atomics",
     "const_zeroed",
     "pod_saturating",
+    "derive",
 ] }
-lc-crypto-primitives = { path = "lc-crypto-primitives" }
 cfg-match = "0.2.1"
 concat-idents = "1.1"
+lilium-sys = { git = "https://github.com/LiliumOS/lilium-sys.git" }
+
+# Local packages
+lc-crypto-primitives = { path = "lc-crypto-primitives" }
+lc-crypto-secret = { path = "lc-crypto-secret" }
+lc-crypto-rand = { path = "lc-crypto-rand" }

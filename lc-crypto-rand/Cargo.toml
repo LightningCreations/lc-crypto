@@ -1,0 +1,32 @@
+[package]
+name = "lc-crypto-rand"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+lc-crypto-primitives.workspace = true
+lc-crypto-secret.workspace = true
+bytemuck.workspace = true
+cfg-match.workspace = true
+
+
+[features]
+use-insecure-hw-rng = []
+alloc = ["lc-crypto-primitives/alloc", "lc-crypto-secret/alloc"]
+std = [
+    "lc-crypto-primitives/std",
+    "lc-crypto-secret/std",
+    "getrandom/std",
+    "alloc",
+]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(lc_crypto_insecure_rng)',
+] }
+
+[target.'cfg(any(unix, windows))'.dependencies]
+getrandom = "0.3.1"
+
+[target.'cfg(all(target_os = "lilium", not(target_env = "kernel")))'.dependencies]
+lilium-sys.workspace = true

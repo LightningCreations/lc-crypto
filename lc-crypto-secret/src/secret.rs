@@ -9,9 +9,10 @@ use lc_crypto_primitives::{
     asm::{sbox_lookup, write_bytes_explicit},
     cmp::bytes_eq_secure,
     mem::transmute_unchecked,
+    traits::ByteArray,
 };
 
-use crate::traits::{Sealed, SecretTy};
+use lc_crypto_primitives::traits::{SealedSecret, SecretTy};
 
 /// [`Secret<T>`] is a type that wraps a secret value in a manner that only allows opaque operations to be performed on the value, such as conversions to other `Secret` types.
 ///
@@ -165,6 +166,16 @@ impl<T: SecretTy> Secret<T> {
 }
 
 impl<T: SecretTy + ?Sized> Secret<T> {
+    /// Creates a [`Secret`] wrapper for an existing `&T`.
+    pub const fn from_ref(x: &T) -> &Self {
+        unsafe { &*(x as *const T as *const Self) }
+    }
+
+    /// Creates a [`Secret`] wrapper for an existing `&mut T`
+    pub const fn from_mut(x: &mut T) -> &mut Self {
+        unsafe { &mut *(x as *mut T as *mut Self) }
+    }
+
     /// Gets the inner value, bypassing [`Secret`].
     ///
     /// Note: This is not an `unsafe` method but may not be what you want. You should use this only at the end of a secret computation.
@@ -321,6 +332,10 @@ impl<T: SecretTy> Clone for Secret<T> {
         // SAFETY: The def of `SecretTy` means any
         Self(unsafe { core::ptr::read(&self.0) })
     }
+
+    fn clone_from(&mut self, source: &Self) {
+        self.set(unsafe { core::ptr::read(&source.0) })
+    }
 }
 
 #[cfg(feature = "alloc")]
@@ -374,14 +389,15 @@ impl<T: SecretTy + ?Sized, A: alloc::alloc::Allocator + Default> From<&Secret<T>
     fn from(value: &Secret<T>) -> Self {
         let layout = Layout::for_value(value);
 
-        let metadata = <T as Sealed>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
+        let metadata =
+            <T as SealedSecret>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
 
         let alloc = A::default();
 
         if let Ok(ptr) = alloc.allocate(layout) {
             let ptr = ptr.as_ptr().cast::<()>();
 
-            let ptr = <T as Sealed>::from_raw_parts(ptr, metadata);
+            let ptr = <T as SealedSecret>::from_raw_parts(ptr, metadata);
 
             unsafe {
                 core::ptr::copy_nonoverlapping(
@@ -406,6 +422,45 @@ impl<T: SecretTy + ?Sized> PartialEq for Secret<T> {
 }
 
 impl<T: SecretTy + ?Sized> Eq for Secret<T> {}
+
+impl Secret<[u8]> {
+    pub fn array_chunks<A: ByteArray>(&self) -> ArrayChunks<'_, A> {
+        const { assert!(A::LEN != 0) }
+        let len = self.len();
+        let rem = len % A::LEN;
+        let tlen = len - rem;
+
+        let (a, b) = self.get_nonsecret().split_at(tlen);
+
+        let len = tlen / A::LEN;
+
+        let nslice = unsafe { core::slice::from_raw_parts(a as *const _ as *const A, len) };
+
+        ArrayChunks {
+            iter: nslice.iter(),
+            rem: b,
+        }
+    }
+}
+
+pub struct ArrayChunks<'a, A: 'static> {
+    iter: core::slice::Iter<'a, A>,
+    rem: &'a [u8],
+}
+
+impl<'a, A: ByteArray> ArrayChunks<'a, A> {
+    pub fn remainder(&self) -> &'a Secret<[u8]> {
+        Secret::from_ref(self.rem)
+    }
+}
+
+impl<'a, A: ByteArray> Iterator for ArrayChunks<'a, A> {
+    type Item = &'a Secret<A>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(Secret::from_ref)
+    }
+}
 
 #[cfg(feature = "alloc")]
 impl<T: SecretTy> Secret<T> {
@@ -441,6 +496,48 @@ impl<T: SecretTy> Secret<T> {
         };
 
         unsafe { Box::from_raw_in(ptr.as_ptr().cast::<T>() as *mut Self, alloc) }
+    }
+}
+
+impl<S: SecretTy + ?Sized> AsRef<Secret<[u8]>> for Secret<S> {
+    fn as_ref(&self) -> &Secret<[u8]> {
+        self.as_byte_slice()
+    }
+}
+
+impl<S: SecretTy + ?Sized> AsMut<Secret<[u8]>> for Secret<S> {
+    fn as_mut(&mut self) -> &mut Secret<[u8]> {
+        self.as_byte_slice_mut()
+    }
+}
+
+impl AsRef<Secret<[u8]>> for [u8] {
+    fn as_ref(&self) -> &Secret<[u8]> {
+        Secret::from_ref(self)
+    }
+}
+
+impl AsMut<Secret<[u8]>> for [u8] {
+    fn as_mut(&mut self) -> &mut Secret<[u8]> {
+        Secret::from_mut(self)
+    }
+}
+
+impl<const N: usize> AsRef<Secret<[u8]>> for [u8; N] {
+    fn as_ref(&self) -> &Secret<[u8]> {
+        Secret::from_ref(self)
+    }
+}
+
+impl<const N: usize> AsMut<Secret<[u8]>> for [u8; N] {
+    fn as_mut(&mut self) -> &mut Secret<[u8]> {
+        Secret::from_mut(self)
+    }
+}
+
+impl AsRef<Secret<[u8]>> for str {
+    fn as_ref(&self) -> &Secret<[u8]> {
+        Secret::from_ref(self.as_bytes())
     }
 }
 

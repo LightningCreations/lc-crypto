@@ -1,0 +1,26 @@
+[package]
+name = "lc-crypto-bignum"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+cfg-match.workspace = true
+lc-crypto-primitives.workspace = true
+lc-crypto-secret.workspace = true
+lc-crypto-rand = { workspace = true, optional = true }
+
+[features]
+alloc = [
+    "lc-crypto-primitives/alloc",
+    "lc-crypto-secret/alloc",
+    "bytemuck/extern_crate_alloc",
+]
+std = [
+    "alloc",
+    "lc-crypto-primitives/std",
+    "lc-crypto-secret/std",
+    "lc-crypto-rand/std",
+    "bytemuck/extern_crate_std",
+]
+random = ["dep:lc-crypto-rand"]
