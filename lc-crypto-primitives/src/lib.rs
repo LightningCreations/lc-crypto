@@ -29,6 +29,7 @@ pub mod asm;
 pub mod bignum;
 pub mod cmp;
 
+pub mod array;
 pub mod digest;
 pub mod error;
 pub mod mem;

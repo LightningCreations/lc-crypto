@@ -5,5 +5,6 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
+pub mod array_vec;
 pub mod secret;
 pub mod traits;

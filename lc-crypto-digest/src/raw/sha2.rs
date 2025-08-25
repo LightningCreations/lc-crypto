@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
 use bytemuck::{Pod, Zeroable};
 use lc_crypto_primitives::{
@@ -8,7 +8,7 @@ use lc_crypto_primitives::{
 use lc_crypto_secret::secret::Secret;
 
 mod private {
-    use std::ops::{Add, BitAnd, BitOr, BitXor, Not};
+    use core::ops::{Add, BitAnd, BitOr, BitXor, Not};
 
     use bytemuck::Pod;
     use lc_crypto_primitives::traits::{ByteArray, SecretTy};
@@ -39,6 +39,8 @@ mod private {
         const ROUND_CONSTANTS: Self::MessageArray;
 
         fn from_be_bytes(arr: Self::FromBytes) -> Self;
+
+        fn to_be_bytes(self) -> Self::FromBytes;
 
         fn wrapping_add(self, other: Self) -> Self;
 
@@ -76,6 +78,11 @@ mod private {
         #[inline(always)]
         fn from_be_bytes(arr: Self::FromBytes) -> Self {
             Self::from_be_bytes(arr)
+        }
+
+        #[inline(always)]
+        fn to_be_bytes(self) -> Self::FromBytes {
+            Self::to_be_bytes(self)
         }
 
         #[inline(always)]
@@ -198,6 +205,11 @@ mod private {
         #[inline(always)]
         fn from_be_bytes(arr: Self::FromBytes) -> Self {
             Self::from_be_bytes(arr)
+        }
+
+        #[inline(always)]
+        fn to_be_bytes(self) -> Self::FromBytes {
+            Self::to_be_bytes(self)
         }
 
         #[inline(always)]
@@ -368,7 +380,8 @@ impl<W: Sha2Word, const BITS: u32, O: ByteArray> RawDigest for Sha2<W, BITS, O> 
     }
 
     fn finish(&self) -> lc_crypto_primitives::error::Result<Self::Output> {
-        let mut output: O = O::truncate(bytemuck::bytes_of(&self.state));
+        let raw_array = self.state.map(|v| v.to_be_bytes());
+        let mut output: O = O::truncate(bytemuck::bytes_of(&raw_array));
         let tbits = (O::LEN as u32 * 8) - BITS;
         let n = (0xFF) >> tbits;
         *output.last_mut() &= n;

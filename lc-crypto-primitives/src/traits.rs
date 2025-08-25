@@ -182,7 +182,7 @@ impl<const N: usize> ByteArray for [u8; N] {
 #[doc(hidden)]
 pub use private::SealedSecret;
 
-use crate::mem::transmute_unchecked;
+use crate::{array::ArrayVecArray, mem::transmute_unchecked};
 
 /// [`SecretTy`] is a type that can be used with [`Secret<T>`][crate::secret::Secret]
 ///

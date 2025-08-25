@@ -11,3 +11,7 @@ pub trait SecretDigest: RawDigest {
         <Self as RawDigest>::raw_update_final(self, block.get_nonsecret())
     }
 }
+
+pub trait ExtendedKeyedDigest: RawDigest {
+    fn reset_with_extended_key(&mut self, key: &[u8]) -> error::Result<()>;
+}

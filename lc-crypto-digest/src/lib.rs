@@ -1,3 +1,5 @@
+#![no_std]
+
 use lc_crypto_primitives::{
     digest::RawDigest,
     traits::{ByteArray, SecretTy},
@@ -6,6 +8,7 @@ use lc_crypto_secret::secret::Secret;
 
 use crate::traits::SecretDigest;
 
+pub mod mac;
 pub mod raw;
 pub mod traits;
 
