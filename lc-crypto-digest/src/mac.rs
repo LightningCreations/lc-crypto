@@ -8,7 +8,11 @@ pub struct HMac<U: RawDigest> {
 }
 
 impl<U: RawDigest> HMac<U> {
-    pub const fn new_with_key<S: AsRef<Secret<[u8]>>>(inner: U, outer: U, key: S) -> Self {
-
+    pub fn new_with_key<S: AsRef<Secret<[u8]>>>(inner: U, outer: U, key: S) -> Self {
+        Self {
+            inner,
+            outer,
+            key: BaseArrayVec::from_slice(key),
+        }
     }
 }
