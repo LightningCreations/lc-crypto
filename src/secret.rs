@@ -1,19 +1,19 @@
 use core::{
     alloc::Layout,
     iter::FusedIterator,
-    ops::{Index, IndexMut},
+    ops::{Index, IndexMut, Range},
     slice::SliceIndex,
 };
 
-use bytemuck::{Pod, Zeroable};
-use lc_crypto_primitives::{
+use crate::{
     asm::{sbox_lookup, write_bytes_explicit},
     cmp::bytes_eq_secure,
     mem::transmute_unchecked,
     traits::ByteArray,
 };
+use bytemuck::{Pod, Zeroable};
 
-use lc_crypto_primitives::traits::{SealedSecret, SecretTy};
+use crate::traits::{SealedSecret, SecretTy};
 
 /// [`Secret<T>`] is a type that wraps a secret value in a manner that only allows opaque operations to be performed on the value, such as conversions to other `Secret` types.
 ///
@@ -222,6 +222,10 @@ impl<T: SecretTy + ?Sized> Secret<T> {
             write_bytes_explicit(ptr, val, len);
         }
     }
+
+    pub fn write_zeroes(&mut self) {
+        self.write_bytes(0);
+    }
 }
 
 impl<T: SecretTy> Secret<[T]> {
@@ -301,6 +305,22 @@ impl<T: SecretTy> Secret<[T]> {
     {
         unsafe { &mut *(self.0.get_unchecked_mut(idx) as *mut _ as *mut Secret<_>) }
     }
+
+    pub fn copy_from_slice(&mut self, other: &Secret<[T]>) {
+        assert!(self.len() == other.len());
+
+        unsafe {
+            core::ptr::copy_nonoverlapping(other.as_ptr(), self.as_mut_ptr(), other.len());
+        }
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter(self.0.iter())
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<'_, T> {
+        IterMut(self.0.iter_mut())
+    }
 }
 
 impl<T: SecretTy, I: SliceIndex<[T]>> Index<I> for Secret<[T]>
@@ -354,7 +374,8 @@ impl<T: SecretTy + ?Sized> From<&Secret<T>> for alloc::boxed::Box<Secret<T>> {
     fn from(value: &Secret<T>) -> Self {
         let layout = Layout::for_value(value);
 
-        let metadata = <T as Sealed>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
+        let metadata =
+            <T as SealedSecret>::into_raw_parts(core::ptr::addr_of!(value.0).cast_mut()).1;
 
         let ptr: *mut () = if layout.size() == 0 {
             core::ptr::without_provenance_mut(layout.align())
@@ -363,7 +384,7 @@ impl<T: SecretTy + ?Sized> From<&Secret<T>> for alloc::boxed::Box<Secret<T>> {
         };
 
         if !ptr.is_null() {
-            let ptr = <T as Sealed>::from_raw_parts(ptr, metadata);
+            let ptr = <T as SealedSecret>::from_raw_parts(ptr, metadata);
 
             unsafe {
                 core::ptr::copy_nonoverlapping(
@@ -430,7 +451,7 @@ impl Secret<[u8]> {
     }
 }
 
-pub struct ArrayChunks<'a, A: 'static>(lc_crypto_primitives::traits::ArrayChunks<'a, A>);
+pub struct ArrayChunks<'a, A: 'static>(crate::traits::ArrayChunks<'a, A>);
 
 impl<'a, A: ByteArray> ArrayChunks<'a, A> {
     pub fn remainder(&self) -> &'a Secret<[u8]> {
@@ -540,6 +561,120 @@ impl<const N: usize> AsMut<Secret<[u8]>> for [u8; N] {
 impl AsRef<Secret<[u8]>> for str {
     fn as_ref(&self) -> &Secret<[u8]> {
         Secret::from_ref(self.as_bytes())
+    }
+}
+
+pub struct Iter<'a, T>(core::slice::Iter<'a, T>);
+
+impl<'a, T: SecretTy> Iterator for Iter<'a, T> {
+    type Item = &'a Secret<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(Secret::from_ref)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+
+    fn advance_by(&mut self, n: usize) -> Result<(), core::num::NonZero<usize>> {
+        self.0.advance_by(n)
+    }
+}
+
+impl<'a, T: SecretTy> ExactSizeIterator for Iter<'a, T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a, T: SecretTy> FusedIterator for Iter<'a, T> {}
+
+impl<'a, T: SecretTy> DoubleEndedIterator for Iter<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(Secret::from_ref)
+    }
+}
+
+pub struct IterMut<'a, T>(core::slice::IterMut<'a, T>);
+
+impl<'a, T: SecretTy> Iterator for IterMut<'a, T> {
+    type Item = &'a mut Secret<T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(Secret::from_mut)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+
+    fn advance_by(&mut self, n: usize) -> Result<(), core::num::NonZero<usize>> {
+        self.0.advance_by(n)
+    }
+}
+
+impl<'a, T: SecretTy> ExactSizeIterator for IterMut<'a, T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a, T: SecretTy> FusedIterator for IterMut<'a, T> {}
+
+impl<'a, T: SecretTy> DoubleEndedIterator for IterMut<'a, T> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0.next_back().map(Secret::from_mut)
+    }
+}
+
+pub struct ArrayIter<T: SecretTy, const N: usize> {
+    inner: [T; N],
+    range: Range<usize>,
+}
+
+impl<T: SecretTy, const N: usize> Drop for ArrayIter<T, N> {
+    fn drop(&mut self) {
+        unsafe {
+            write_bytes_explicit(
+                (&raw mut self.inner).cast(),
+                0,
+                core::mem::size_of::<[T; N]>(),
+            );
+        }
+    }
+}
+
+impl<T: SecretTy, const N: usize> Iterator for ArrayIter<T, N> {
+    type Item = Secret<T>;
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(Secret::new(self.inner[self.range.next()?].trivial_copy()))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.range.size_hint()
+    }
+
+    fn advance_by(&mut self, n: usize) -> Result<(), core::num::NonZero<usize>> {
+        self.range.advance_by(n)
+    }
+}
+
+impl<T: SecretTy, const N: usize> DoubleEndedIterator for ArrayIter<T, N> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        Some(Secret::new(
+            self.inner[self.range.next_back()?].trivial_copy(),
+        ))
+    }
+
+    fn advance_back_by(&mut self, n: usize) -> Result<(), core::num::NonZero<usize>> {
+        self.range.advance_back_by(n)
+    }
+}
+
+impl<T: SecretTy, const N: usize> ExactSizeIterator for ArrayIter<T, N> {
+    fn len(&self) -> usize {
+        self.range.len()
     }
 }
 

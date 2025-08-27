@@ -12,6 +12,13 @@ mod private {
 
         fn into_raw_parts(ptr: *mut Self) -> (*mut (), Self::Metadata);
         fn from_raw_parts(ptr: *mut (), meta: Self::Metadata) -> *mut Self;
+
+        fn trivial_copy(&self) -> Self
+        where
+            Self: Sized,
+        {
+            unsafe { core::ptr::read(self) }
+        }
     }
 }
 

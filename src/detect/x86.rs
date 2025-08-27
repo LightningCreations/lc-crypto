@@ -1,12 +1,5 @@
-#[cfg(target_arch = "x86")]
-use core::arch::x86 as arch;
-
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64 as arch;
-
+#[cfg(feature = "runtime-detect")]
 use spin::once::Once;
-
-use arch::CpuidResult;
 
 // Contains the feature array.
 // The layout of the array is as follows:
@@ -41,9 +34,18 @@ use arch::CpuidResult;
 // * Bit 10, which indicates `syscall` support on the AMD k6 processor only, is clear,
 // * Bit 11, which indicates `syscall` support, is set to `1` on an AMD k6 processor that indicates support via `cpuid[eax=0x80000001].ecx[10]`, and
 // * Bit 11 may be set to `0` if executed from a 32-bit process running on a 64-bit OS, even if `cpuid` would report it's support.
+#[cfg(feature = "runtime-detect")]
 static CPU_FEATURE_INFO: Once<[u32; 48]> = Once::new();
 
+#[cfg(feature = "runtime-detect")]
 fn init_cpuid_features() -> [u32; 48] {
+    #[cfg(target_arch = "x86")]
+    use core::arch::x86 as arch;
+
+    #[cfg(target_arch = "x86_64")]
+    use core::arch::x86_64 as arch;
+
+    use arch::CpuidResult;
     let eax1 = unsafe { arch::__cpuid(1) };
     let eax7_ecx0 = unsafe { arch::__cpuid_count(7, 0) };
     let eax7_ecx1 = unsafe { arch::__cpuid_count(7, 1) };
@@ -131,6 +133,7 @@ fn init_cpuid_features() -> [u32; 48] {
     features
 }
 
+#[cfg(feature = "runtime-detect")]
 #[doc(hidden)]
 pub fn __get_cpuid_features() -> &'static [u32; 48] {
     CPU_FEATURE_INFO.call_once(init_cpuid_features)
@@ -610,6 +613,7 @@ macro_rules! is_x86_feature_enabled {
     };
 }
 
+#[cfg(feature = "runtime-detect")]
 #[macro_export]
 macro_rules! is_x86_feature_detected {
     ($feature:tt) => {
@@ -618,5 +622,13 @@ macro_rules! is_x86_feature_detected {
                 let (idx, bit) = $crate::__x86_feature_to_bit!($feature);
                 ($crate::detect::x86::__get_cpuid_features())[idx] & (1 << bit) != 0
             })
+    };
+}
+
+#[cfg(not(feature = "runtime-detect"))]
+#[macro_export]
+macro_rules! is_x86_feature_detected {
+    ($feature:tt) => {
+        $crate::is_x86_feature_enabled!($feature)
     };
 }

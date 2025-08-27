@@ -54,6 +54,8 @@ pub unsafe trait ByteSliceable: Eq {
     ) -> &mut Self;
 
     fn copy_from_slice(&mut self, other: &Self);
+
+    fn write_zeroes(&mut self);
 }
 
 unsafe impl<I: SliceIndex<[u8]>> ByteSliceableOutput<I> for [u8]
@@ -146,6 +148,10 @@ unsafe impl ByteSliceable for [u8] {
     fn copy_from_slice(&mut self, other: &Self) {
         self.copy_from_slice(other);
     }
+
+    fn write_zeroes(&mut self) {
+        self.fill(0);
+    }
 }
 
 pub unsafe trait ArrayVecArray: Zeroable + Eq {
@@ -159,6 +165,8 @@ pub unsafe trait ArrayVecArray: Zeroable + Eq {
     fn as_slice_mut(&mut self) -> &mut Self::Slice;
 
     fn insert_at(&mut self, idx: usize, b: u8);
+
+    fn from_underlying(underlying: Self::Underlying) -> Self;
 
     fn cmp_slice(a: &Self::Slice, b: &Self::Slice) -> Ordering
     where
@@ -191,6 +199,10 @@ unsafe impl<A: ByteArray> ArrayVecArray for A {
 
     fn insert_at(&mut self, idx: usize, b: u8) {
         self.as_slice_mut()[idx] = b;
+    }
+
+    fn from_underlying(underlying: Self::Underlying) -> Self {
+        underlying
     }
 }
 
@@ -246,6 +258,13 @@ impl<A: ArrayVecArray> BaseArrayVec<A> {
         Self {
             inner: bytemuck::zeroed(),
             len: 0,
+        }
+    }
+
+    pub const fn new_init(arr: A) -> Self {
+        Self {
+            inner: arr,
+            len: A::LEN,
         }
     }
 
@@ -312,6 +331,34 @@ impl<A: ArrayVecArray> BaseArrayVec<A> {
 
     pub const fn capacity(&self) -> usize {
         A::LEN
+    }
+
+    pub fn zero_pad(&mut self) {
+        let start = self.len;
+        unsafe {
+            self.inner
+                .as_slice_mut()
+                .slice_unchecked_mut(start..)
+                .write_zeroes()
+        }
+        self.len = A::LEN;
+    }
+
+    pub fn into_inner(mut self) -> A {
+        self.zero_pad();
+
+        self.inner
+    }
+}
+
+impl<A: ByteArray> BaseArrayVec<A> {
+    pub fn convert<B: ArrayVecArray<Underlying = A>>(self) -> BaseArrayVec<B> {
+        let len = self.len;
+
+        BaseArrayVec {
+            inner: B::from_underlying(self.inner),
+            len,
+        }
     }
 }
 
@@ -386,5 +433,177 @@ impl<const N: usize> From<&[u8]> for ArrayVec<N> {
 impl<const N: usize> From<&str> for ArrayVec<N> {
     fn from(value: &str) -> Self {
         ArrayVec::from_slice(value)
+    }
+}
+
+use crate::traits::SecretTy;
+
+use crate::secret::Secret;
+
+unsafe impl<I: SliceIndex<[u8]>> ByteSliceableOutput<I> for Secret<[u8]>
+where
+    I::Output: SecretTy,
+    I::Output: 'static,
+{
+    type Output = Secret<I::Output>;
+
+    fn wrap(sl: &I::Output) -> &Self::Output {
+        Secret::from_ref(sl)
+    }
+
+    fn wrap_mut(sl: &mut I::Output) -> &mut Self::Output {
+        Secret::from_mut(sl)
+    }
+}
+
+unsafe impl ByteSliceable for Secret<[u8]> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn get<I: core::slice::SliceIndex<[u8]>>(
+        &self,
+        idx: I,
+    ) -> Option<&<Self as ByteSliceableOutput<I>>::Output>
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        self.get_nonsecret().get(idx).map(Self::wrap)
+    }
+
+    fn index<I: core::slice::SliceIndex<[u8]>>(
+        &self,
+        idx: I,
+    ) -> &<Self as ByteSliceableOutput<I>>::Output
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        Self::wrap(&self.get_nonsecret()[idx])
+    }
+
+    unsafe fn get_unchecked<I: core::slice::SliceIndex<[u8]>>(
+        &self,
+        idx: I,
+    ) -> &<Self as ByteSliceableOutput<I>>::Output
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        Self::wrap(unsafe { self.get_nonsecret().get_unchecked(idx) })
+    }
+
+    fn get_mut<I: core::slice::SliceIndex<[u8]>>(
+        &mut self,
+        idx: I,
+    ) -> Option<&mut <Self as ByteSliceableOutput<I>>::Output>
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        self.get_mut_nonsecret().get_mut(idx).map(Self::wrap_mut)
+    }
+
+    fn index_mut<I: core::slice::SliceIndex<[u8]>>(
+        &mut self,
+        idx: I,
+    ) -> &mut <Self as ByteSliceableOutput<I>>::Output
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        Self::wrap_mut(&mut self.get_mut_nonsecret()[idx])
+    }
+
+    unsafe fn get_unchecked_mut<I: core::slice::SliceIndex<[u8]>>(
+        &mut self,
+        idx: I,
+    ) -> &mut <Self as ByteSliceableOutput<I>>::Output
+    where
+        Self: ByteSliceableOutput<I>,
+        I::Output: 'static,
+    {
+        Self::wrap_mut(unsafe { self.get_mut_nonsecret().get_unchecked_mut(idx) })
+    }
+
+    unsafe fn slice_unchecked(
+        &self,
+        idx: impl core::slice::SliceIndex<[u8], Output = [u8]>,
+    ) -> &Self {
+        self.get_unchecked(idx)
+    }
+
+    unsafe fn slice_unchecked_mut(
+        &mut self,
+        idx: impl core::slice::SliceIndex<[u8], Output = [u8]>,
+    ) -> &mut Self {
+        self.get_unchecked_mut(idx)
+    }
+
+    fn copy_from_slice(&mut self, other: &Self) {
+        self.copy_from_slice(other)
+    }
+
+    fn write_zeroes(&mut self) {
+        self.write_zeroes();
+    }
+}
+
+unsafe impl<A: ByteArray> ArrayVecArray for Secret<A> {
+    type Underlying = A;
+
+    type Slice = Secret<[u8]>;
+
+    const LEN: usize = A::LEN;
+
+    fn as_slice(&self) -> &Self::Slice {
+        self.as_byte_slice()
+    }
+
+    fn as_slice_mut(&mut self) -> &mut Self::Slice {
+        self.as_byte_slice_mut()
+    }
+
+    fn insert_at(&mut self, idx: usize, b: u8) {
+        self.get_mut_nonsecret().as_mut()[idx] = b;
+    }
+
+    fn cmp_slice(_: &Self::Slice, _: &Self::Slice) -> core::cmp::Ordering
+    where
+        Self: Ord,
+    {
+        const { panic!("Secret: !Ord, right") }
+    }
+
+    fn hash_slice<H: core::hash::Hasher>(_: &Self::Slice, _: &mut H)
+    where
+        Self: core::hash::Hash,
+    {
+        const { panic!("Secret: !Hash, right") }
+    }
+
+    fn from_underlying(underlying: Self::Underlying) -> Self {
+        Secret::new(underlying)
+    }
+}
+
+impl<A: ByteArray> Borrow<Secret<[u8]>> for BaseArrayVec<Secret<A>> {
+    fn borrow(&self) -> &Secret<[u8]> {
+        self.as_slice()
+    }
+}
+
+impl<A: ByteArray> BorrowMut<Secret<[u8]>> for BaseArrayVec<Secret<A>> {
+    fn borrow_mut(&mut self) -> &mut Secret<[u8]> {
+        self.as_slice_mut()
+    }
+}
+
+pub type SecretArrayVec<const N: usize> = BaseArrayVec<Secret<[u8; N]>>;
+
+impl<const N: usize> From<&Secret<[u8]>> for SecretArrayVec<N> {
+    fn from(value: &Secret<[u8]>) -> Self {
+        Self::from_slice(value)
     }
 }

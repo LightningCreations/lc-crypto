@@ -1,10 +1,9 @@
-use lc_crypto_primitives::digest::{RawDigest, ResetableDigest};
-use lc_crypto_primitives::traits::ByteArray;
+#![allow(deprecated)]
 
-#[cfg_attr(
-    not(feature = "insecure-sha1"),
-    deprecated = "SHA-1 is insecure and should not be used for security purposes. To disable this warning, enable the `insecure-sha1` feature"
-)]
+use crate::digest::{RawDigest, ResetableDigest};
+use crate::traits::ByteArray;
+
+#[deprecated = "SHA-1 is insecure and should not be used for security purposes. To disable this warning, enable the `insecure-sha1` feature"]
 pub struct Sha1 {
     state: [u32; 5],
     byte_len: u64,
@@ -23,7 +22,7 @@ impl RawDigest for Sha1 {
     type Output = [u8; 20];
     type Block = [u8; 64];
 
-    fn raw_update(&mut self, block: &Self::Block) -> lc_crypto_primitives::error::Result<()> {
+    fn raw_update(&mut self, block: &Self::Block) -> crate::error::Result<()> {
         self.byte_len += 64;
         let [mut a, mut b, mut c, mut d, mut e] = self.state;
         let mut w = [0u32; 16];
@@ -62,7 +61,7 @@ impl RawDigest for Sha1 {
         Ok(())
     }
 
-    fn raw_update_final(&mut self, rest: &[u8]) -> lc_crypto_primitives::error::Result<()> {
+    fn raw_update_final(&mut self, rest: &[u8]) -> crate::error::Result<()> {
         let final_size = const { Self::Block::LEN - 9 };
         let bitcount = (self.byte_len + rest.len() as u64) << 3;
 
@@ -89,7 +88,7 @@ impl RawDigest for Sha1 {
         self.raw_update(&fblock)
     }
 
-    fn finish(&self) -> lc_crypto_primitives::error::Result<Self::Output> {
+    fn finish(&mut self) -> crate::error::Result<Self::Output> {
         let map = self.state.map(|v| v.to_be_bytes());
 
         Ok(bytemuck::must_cast(map))
@@ -97,7 +96,7 @@ impl RawDigest for Sha1 {
 }
 
 impl ResetableDigest for Sha1 {
-    fn reset(&mut self) -> lc_crypto_primitives::error::Result<()> {
+    fn reset(&mut self) -> crate::error::Result<()> {
         *self = Self::new();
         Ok(())
     }

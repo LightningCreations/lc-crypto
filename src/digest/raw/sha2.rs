@@ -1,17 +1,17 @@
 use core::marker::PhantomData;
 
-use bytemuck::{Pod, Zeroable};
-use lc_crypto_primitives::{
+use crate::secret::Secret;
+use crate::{
     digest::{KeyedDigest, RawDigest, ResetableDigest},
     traits::{ByteArray, SecretTy},
 };
-use lc_crypto_secret::secret::Secret;
+use bytemuck::{Pod, Zeroable};
 
 mod private {
     use core::ops::{Add, BitAnd, BitOr, BitXor, Not};
 
+    use crate::traits::{ByteArray, SecretTy};
     use bytemuck::Pod;
-    use lc_crypto_primitives::traits::{ByteArray, SecretTy};
 
     pub trait Sha2Word:
         SecretTy
@@ -240,7 +240,7 @@ mod private {
 
 use private::{DefaultSha2, Sha2Word};
 
-use crate::traits::SecretDigest;
+use crate::digest::SecretDigest;
 
 pub struct Sha2<W, const BITS: u32, O> {
     state: [W; 8],
@@ -285,10 +285,7 @@ macro_rules! def_new_with_iv_bytes {
         impl<const BITS: u32, O: ByteArray> KeyedDigest for Sha2<$ty, BITS, O> {
             type Key = [u8; 8 * core::mem::size_of::<$ty>()];
 
-            fn reset_with_key(
-                &mut self,
-                key: &Self::Key,
-            ) -> lc_crypto_primitives::error::Result<()> {
+            fn reset_with_key(&mut self, key: &Self::Key) -> crate::error::Result<()> {
                 *self = Self::new_with_iv_bytes(*key);
                 Ok(())
             }
@@ -304,7 +301,7 @@ impl<W: Sha2Word, const BITS: u32, O: ByteArray> RawDigest for Sha2<W, BITS, O> 
 
     type Output = O;
 
-    fn raw_update(&mut self, block: &Self::Block) -> lc_crypto_primitives::error::Result<()> {
+    fn raw_update(&mut self, block: &Self::Block) -> crate::error::Result<()> {
         self.byte_count += Self::Block::LEN as u64;
         let mut w: [W; 16] = bytemuck::zeroed();
 
@@ -352,7 +349,7 @@ impl<W: Sha2Word, const BITS: u32, O: ByteArray> RawDigest for Sha2<W, BITS, O> 
         Ok(())
     }
 
-    fn raw_update_final(&mut self, rest: &[u8]) -> lc_crypto_primitives::error::Result<()> {
+    fn raw_update_final(&mut self, rest: &[u8]) -> crate::error::Result<()> {
         let final_size = const { Self::Block::LEN - (2 * size_of::<W>() + 1) };
         let bitcount = (self.byte_count + rest.len() as u64) << 3;
 
@@ -379,7 +376,7 @@ impl<W: Sha2Word, const BITS: u32, O: ByteArray> RawDigest for Sha2<W, BITS, O> 
         self.raw_update(&fblock)
     }
 
-    fn finish(&self) -> lc_crypto_primitives::error::Result<Self::Output> {
+    fn finish(&mut self) -> crate::error::Result<Self::Output> {
         let raw_array = self.state.map(|v| v.to_be_bytes());
         let mut output: O = O::truncate(bytemuck::bytes_of(&raw_array));
         let tbits = (O::LEN as u32 * 8) - BITS;
@@ -405,7 +402,7 @@ impl<W: Sha2Word, const BITS: u32, O: ByteArray> ResetableDigest for Sha2<W, BIT
 where
     Self: DefaultSha2<W>,
 {
-    fn reset(&mut self) -> lc_crypto_primitives::error::Result<()> {
+    fn reset(&mut self) -> crate::error::Result<()> {
         *self = Self::new();
         Ok(())
     }

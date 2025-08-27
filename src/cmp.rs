@@ -1,65 +1,82 @@
-///
-/// Compares two values for equality in constant time based on the input
-///
-/// Panics if `a.len()!=b.len()`
-///
-/// ## Examples
-///
-/// Compare two byte arrays for equality:
-/// ```
-/// let x = [0,1,2,3,4,5,6,7,8];
-/// let y = [0,1,2,3,4,5,6,7,8];
-/// assert!(lc_crypto::cmp::eq(&x,&y))
-/// ```
-///
-/// Compare two byte arrays for equality:
-/// ```
-/// let x = [0,1,2,3,4,5,6,7,8];
-/// let y = [0,1,2,3,4,5,6,7,9];
-/// assert!(!lc_crypto::cmp::eq(&x,&y))
-/// ```
-#[allow(unsafe_code)]
-pub fn eq(a: &[u8], b: &[u8]) -> bool {
-    let mut ret = true;
-    assert_eq!(a.len(), b.len());
-    for i in 0..a.len() {
-        // SAFETY:
-        // 0<=i<a.len()
-        // a.len()==b.len()
-        ret = ret & unsafe { a.get_unchecked(i) == b.get_unchecked(i) };
+use crate::asm;
+
+#[inline]
+pub fn bytes_eq_secure(a: &[u8], b: &[u8]) -> bool {
+    checked_bytes_eq_secure(a, b)
+        .ok()
+        .expect("Parameters must have the same length")
+}
+
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BadLengthError;
+
+impl core::fmt::Display for BadLengthError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("Arguments must have equal lengths")
     }
-    ret
+}
+
+#[inline]
+pub fn checked_bytes_eq_secure(a: &[u8], b: &[u8]) -> Result<bool, BadLengthError> {
+    if a.len() != b.len() {
+        Err(BadLengthError)
+    } else {
+        Ok(unsafe { asm::eq_bytes_secure(a.as_ptr(), b.as_ptr(), a.len()) })
+    }
 }
 
 #[cfg(test)]
 mod test {
+    use super::bytes_eq_secure;
+
     #[test]
-    pub fn test_eq_eq() {
-        let x = [0, 1, 2, 3];
-        let y = [0, 1, 2, 3];
-        assert!(super::eq(&x, &y));
+    fn test_bytes_eq_secure_eq() {
+        assert!(bytes_eq_secure(&[], &[]));
+        assert!(bytes_eq_secure(&[0], &[0]));
+        assert!(bytes_eq_secure(&[42], &[42]));
+        assert!(bytes_eq_secure(&[0, 1], &[0, 1]));
+        assert!(bytes_eq_secure(&[0, 1, 2], &[0, 1, 2]));
+        assert!(bytes_eq_secure(&[0, 1, 2, 3], &[0, 1, 2, 3]));
+        assert!(bytes_eq_secure(&[1, 2, 3, 4, 5], &[1, 2, 3, 4, 5]));
+        assert!(bytes_eq_secure(
+            &[1, 2, 3, 4, 5, 6, 7],
+            &[1, 2, 3, 4, 5, 6, 7]
+        ));
+        assert!(bytes_eq_secure(
+            &[0, 1, 2, 3, 4, 5, 6, 7],
+            &[0, 1, 2, 3, 4, 5, 6, 7]
+        ));
+        assert!(bytes_eq_secure(
+            &[0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7],
+            &[0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7]
+        ));
+
+        assert!(bytes_eq_secure(
+            &[
+                0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3,
+                4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7
+            ],
+            &[
+                0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 0, 1, 2, 3,
+                4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7
+            ]
+        ));
     }
 
     #[test]
-    pub fn test_eq_ne() {
-        let x = [0, 1, 2, 3];
-        let y = [0, 1, 2, 4];
-        assert!(!super::eq(&x, &y));
+    fn test_bytes_eq_secure_ne() {
+        assert!(!bytes_eq_secure(&[0], &[1]));
+        assert!(!bytes_eq_secure(&[0, 1], &[1, 0]));
+        assert!(!bytes_eq_secure(
+            &[1, 2, 3, 4, 5, 6, 7],
+            &[1, 2, 3, 4, 5, 6, 8]
+        ));
     }
 
     #[test]
     #[should_panic]
-    pub fn test_diff_sizes0() {
-        let x = [0, 1, 2];
-        let y = [0, 1, 2, 4];
-        super::eq(&x, &y);
-    }
-
-    #[test]
-    #[should_panic]
-    pub fn test_diff_sizes1() {
-        let x = [0, 1, 2, 3];
-        let y = [0, 1, 2];
-        super::eq(&x, &y);
+    fn test_bytes_eq_secure_unequal_len() {
+        let _ = bytes_eq_secure(&[], &[0]);
     }
 }

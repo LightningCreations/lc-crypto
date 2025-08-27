@@ -1,20 +1,11 @@
-[workspace]
-members = [
-    "lc-crypto-bignum",
-    "lc-crypto-digest",
-    "lc-crypto-primitives",
-    "lc-crypto-rand",
-    "lc-crypto-secret",
-]
-resolver = "3"
-
-[workspace.package]
+[package]
 version = "0.1.0"
 edition = "2024"
+name = "lc-crypto"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[workspace.dependencies]
+[dependencies]
 bytemuck = { git = "https://github.com/Lokathor/bytemuck", version = "1.21", features = [
     "min_const_generics",
     "must_cast",
@@ -26,9 +17,71 @@ bytemuck = { git = "https://github.com/Lokathor/bytemuck", version = "1.21", fea
 ] }
 cfg-match = "0.2.1"
 concat-idents = "1.1"
-lilium-sys = { git = "https://github.com/LiliumOS/lilium-sys.git" }
+spin = { version = "0.10.0", default-features = false, features = [
+    "once",
+], optional = true }
 
-# Local packages
-lc-crypto-primitives = { path = "lc-crypto-primitives" }
-lc-crypto-secret = { path = "lc-crypto-secret" }
-lc-crypto-rand = { path = "lc-crypto-rand" }
+[features]
+alloc = ["bytemuck/extern_crate_alloc"]
+std = ["spin?/std", "bytemuck/extern_crate_std"]
+error-track_caller = []
+
+# Nightly features. Exposes a public API that requires use of an unstable feature
+nightly-docs = []
+nightly-std-io_error_more = []
+nightly-allocator_api = []
+
+# 
+default = [
+    "bignum",
+    "default-digest",
+    "default-rand",
+    "default-symm",
+    "default-asymm",
+    "runtime-detect",
+]
+
+# Enable runtime switches for assembly code
+runtime-detect = ["dep:spin"]
+
+# Parts of the library
+bignum = []
+digest = []
+rand = []
+symm = []
+asymm = []
+
+# Digest Algorithms
+sha1 = ["digest"]
+sha2 = ["digest"]
+sha3 = ["digest"]
+
+default-digest = ["digest", "sha1", "sha2", "sha3"]
+all-digest = ["default-digest"]
+
+# Random Number Generators
+use-insecure-hw-rng = []
+
+default-rand = ["rand"]
+all-rand = ["default-rand"]
+
+# Symmetric Algorithms
+
+
+default-symm = ["symm"]
+all-symm = ["default-symm"]
+
+# Asymmetric Algorithms
+
+default-asymm = ["asymm"]
+all-asymm = ["default-asymm"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+linux-errno = "1.0.1"
+
+[target.'cfg(target_os = "lilium")'.dependencies]
+lilium-sys.git = "https://github.com/LiliumOS/lilium-sys"
+
+[lints.rust.unexpected_cfgs]
+level = "warn"
+check-cfg = ['cfg(allow_insecure_hw_rand)']
