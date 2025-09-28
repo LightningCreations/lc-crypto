@@ -18,6 +18,12 @@ impl Sha1 {
     }
 }
 
+impl Default for Sha1 {
+    fn default() -> Self {
+        Sha1::new()
+    }
+}
+
 impl RawDigest for Sha1 {
     type Output = [u8; 20];
     type Block = [u8; 64];
@@ -45,8 +51,8 @@ impl RawDigest for Sha1 {
                 .wrapping_add(k)
                 .wrapping_add(e)
                 .wrapping_add(w[i & 15]);
-            w[i] =
-                (w[(i + 13) & 15] ^ w[(i + 8) & 15] ^ w[(i + 2) & 15] ^ w[i] & 15).rotate_left(1);
+            w[i & 15] =
+                (w[(i + 13) & 15] ^ w[(i + 8) & 15] ^ w[(i + 2) & 15] ^ w[i & 15]).rotate_left(1);
             e = d;
             d = c;
             c = b.rotate_left(30);

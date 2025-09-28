@@ -39,3 +39,28 @@ pub trait SecretDigest: RawDigest {
 }
 
 pub mod raw;
+
+pub fn digest<D: RawDigest>(mut digest: D, bytes: &[u8]) -> error::Result<D::Output> {
+    let chunks = D::Block::array_chunks(bytes);
+    let rem = chunks.remainder();
+    for chunk in chunks {
+        digest.raw_update(chunk)?;
+    }
+    digest.raw_update_final(rem)?;
+
+    digest.finish()
+}
+
+pub fn digest_secret<D: SecretDigest>(
+    mut digest: D,
+    bytes: &Secret<[u8]>,
+) -> error::Result<D::Output> {
+    let chunks = bytes.array_chunks::<D::Block>();
+    let rem = chunks.remainder();
+    for chunk in chunks {
+        digest.update(chunk)?;
+    }
+    digest.update_final(rem)?;
+
+    digest.finish()
+}

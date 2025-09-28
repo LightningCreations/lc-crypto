@@ -20,7 +20,7 @@ jobs:
           rustup toolchain add --profile minimal ${{ matrix.rust-channel }}
           rustup default ${{ matrix.rust-channel }}
           rustup update
-      - name: Build
+      - name: Build & Test
         run: |
            cargo build
            cargo test

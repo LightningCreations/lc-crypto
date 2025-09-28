@@ -1,0 +1,11 @@
+da39a3ee5e6b4b0d3255bfef95601890afd80709 *test-files/tv-empty
+52ff93f2e93d35e008baf23ff7428adb76e23393 *test-files/tv-random-1024
+48766f0715f61bd246071746cc74252c76664104 *test-files/tv-random-16
+7904a1363e78f9901d76745e083beefe0a9bdf89 *test-files/tv-random-256
+8d7ffb2cd87a0a37282b445cb697952a1c0506f4 *test-files/tv-random-32
+b9e095d0fa30f4c89a4eb76b5e4fb8d3ecd7f522 *test-files/tv-random-512
+6a521e1d2a632c26e53b83d2cc4b0edecfc1e68c *test-files/tv-zero-1024
+0631457264ff7f8d5fb1edc2c0211992a67c73e6 *test-files/tv-zero-16
+67dfd19f3eb3649d6f3f6631e44d0bd36b8d8d19 *test-files/tv-zero-256
+897256b6709e1a4da9daba92b6bde39ccfccd8c1 *test-files/tv-zero-32
+2e000fa7e85759c7f4c254d4d9c33ef481e459a7 *test-files/tv-zero-512

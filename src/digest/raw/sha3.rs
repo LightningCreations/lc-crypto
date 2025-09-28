@@ -125,6 +125,12 @@ pub trait KeccackSpec {
 
 pub struct Keccack<S: KeccackSpec>([[S::Word; 5]; 5]);
 
+impl<S: KeccackSpec> Default for Keccack<S> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<S: KeccackSpec> Keccack<S> {
     pub const fn new() -> Self {
         const {
@@ -153,7 +159,7 @@ fn permute_theta<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
     for j in 0..5 {
         let p = arr
             .iter()
-            .map(|v| v[(j - 1) % 5] & v[(j + 1) % 5].rotate_left(1))
+            .map(|v| v[(j + 4) % 5] & v[(j + 1) % 5].rotate_left(1))
             .fold(bytemuck::zeroed::<W>(), |a, b| a ^ b);
         for i in 0..5 {
             ret[i][j] ^= p;
@@ -267,7 +273,7 @@ impl<S: KeccackSpec> RawDigest for Keccack<S> {
     fn finish(&mut self) -> crate::error::Result<Self::Output> {
         let mut output = bytemuck::zeroed::<Self::Output>();
 
-        let lmask = const { 0xFFu8 >> (8 - S::OUT_BITS & 7) & 7 };
+        let lmask = const { 0xFFu8 >> ((8 - (S::OUT_BITS & 7)) & 7) };
 
         let mut output_sl = output.as_mut();
 

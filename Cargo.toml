@@ -23,8 +23,9 @@ spin = { version = "0.10.0", default-features = false, features = [
 
 [features]
 alloc = ["bytemuck/extern_crate_alloc"]
-std = ["spin?/std", "bytemuck/extern_crate_std"]
+std = ["spin?/std", "bytemuck/extern_crate_std", "cache"]
 error-track_caller = []
+cache = ["__spin"]
 
 # Nightly features. Exposes a public API that requires use of an unstable feature
 nightly-docs = []
@@ -42,7 +43,7 @@ default = [
 ]
 
 # Enable runtime switches for assembly code
-runtime-detect = ["dep:spin"]
+runtime-detect = ["__spin"]
 
 # Parts of the library
 bignum = []
@@ -72,6 +73,12 @@ default-symm = ["symm"]
 all-symm = ["default-symm"]
 
 # Asymmetric Algorithms
+
+
+# Internal features
+# Not Public API
+
+__spin = ["dep:spin"]
 
 default-asymm = ["asymm"]
 all-asymm = ["default-asymm"]

@@ -104,7 +104,15 @@ impl<'a, A: ByteArray> ExactSizeIterator for ArrayChunksMut<'a, A> {
 
 impl<'a, A: ByteArray> FusedIterator for ArrayChunksMut<'a, A> {}
 
-pub trait ByteArray: Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + 'static {
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq)]
+pub enum FromHexStringError {
+    BadLength(usize),
+    BadChar(char),
+}
+
+pub trait ByteArray:
+    Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + core::fmt::Debug + 'static
+{
     const LEN: usize;
 
     fn array_chunks<'a>(sl: &'a [u8]) -> ArrayChunks<'a, Self> {
@@ -168,7 +176,7 @@ pub trait ByteArray: Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + 
 
         let len = sl.len();
 
-        this.as_mut().copy_from_slice(sl);
+        this.as_mut()[..len].copy_from_slice(sl);
 
         this
     }
@@ -178,6 +186,40 @@ pub trait ByteArray: Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + 
         let mut this: Self = bytemuck::zeroed();
         bytemuck::bytes_of_mut(&mut this).copy_from_slice(&sl[..Self::LEN]);
         this
+    }
+
+    fn from_hex_string(st: &str) -> Result<Self, FromHexStringError> {
+        if st.len() != (Self::LEN * 2) {
+            return Err(FromHexStringError::BadLength(st.len()));
+        }
+        let mut bytes = bytemuck::zeroed::<Self>();
+
+        let sl = bytes.as_mut();
+
+        for (i, &[a, b]) in <[u8; 2]>::array_chunks(st.as_bytes()).enumerate() {
+            match (|| -> Result<(), usize> {
+                Ok(sl[i] =
+                    from_hex(a).map_err(|()| 0usize)? << 4 | from_hex(b).map_err(|()| 1usize)?)
+            })() {
+                Ok(b) => b,
+                Err(n) => {
+                    return Err(FromHexStringError::BadChar(
+                        st[2 * i + n..].chars().next().unwrap(),
+                    ));
+                }
+            };
+        }
+        Ok(bytes)
+    }
+}
+
+#[inline(always)]
+fn from_hex(hex_id: u8) -> Result<u8, ()> {
+    match hex_id {
+        b'0'..=b'9' => Ok(hex_id - 0x30),
+        b'A'..=b'F' => Ok(hex_id - 0x37),
+        b'A'..=b'f' => Ok(hex_id - 0x57),
+        _ => Err(()),
     }
 }
 
@@ -189,7 +231,10 @@ impl<const N: usize> ByteArray for [u8; N] {
 #[doc(hidden)]
 pub use private::SealedSecret;
 
-use crate::{array::ArrayVecArray, mem::transmute_unchecked};
+use crate::{
+    array::ArrayVecArray,
+    mem::{ZeroableInPlace, transmute_unchecked},
+};
 
 /// [`SecretTy`] is a type that can be used with [`Secret<T>`][crate::secret::Secret]
 ///
@@ -200,7 +245,7 @@ use crate::{array::ArrayVecArray, mem::transmute_unchecked};
 /// * It can be safely cast to an from a (potentially mutable) slice of bytes with length equal to `size_of_val`
 /// * A mutable value of the type can be overwitten with all zeroes.
 /// * If `Self: Sized`, then `Self: Copy + Pod`.
-pub unsafe trait SecretTy: SealedSecret {}
+pub unsafe trait SecretTy: SealedSecret + ZeroableInPlace {}
 
 impl<T: Pod + Eq> SealedSecret for T {
     type Metadata = ();

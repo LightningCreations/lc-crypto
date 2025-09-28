@@ -239,6 +239,8 @@ mod private {
 }
 
 use private::{DefaultSha2, Sha2Word};
+#[cfg(feature = "cache")]
+use spin::Once;
 
 use crate::digest::SecretDigest;
 
@@ -398,6 +400,15 @@ where
     }
 }
 
+impl<W: Sha2Word, const BITS: u32, O: ByteArray> Default for Sha2<W, BITS, O>
+where
+    Self: DefaultSha2<W>,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<W: Sha2Word, const BITS: u32, O: ByteArray> ResetableDigest for Sha2<W, BITS, O>
 where
     Self: DefaultSha2<W>,
@@ -498,7 +509,7 @@ pub type Sha512_256 = Sha2<u64, 256, [u8; 32]>;
 pub type Sha512_224 = Sha2<u64, 224, [u8; 28]>;
 
 impl<const N: u32, O: ByteArray> Sha2<u64, N, O> {
-    pub fn new_512_t() -> Self {
+    fn real_compute_iv() -> [u64; 8] {
         const { assert!(N < 512 && N != 384 && N > 0) }
         let mut modified = Sha512::new_modified();
         let mut buf = *b"SHA-512/\0\0\0";
@@ -515,9 +526,31 @@ impl<const N: u32, O: ByteArray> Sha2<u64, N, O> {
             len += 1;
         }
         modified.raw_update_final(&buf[..len]).unwrap();
-        Self::new_with_iv_bytes(modified.finish().unwrap())
+        // This is an optimization, it avoids round-tripping the words to big-endian on little-endian machines
+        modified.state
+    }
+
+    #[cfg(feature = "cache")]
+    pub fn compute_iv() -> [u64; 8] {
+        *crate::util::get_or_init(&SHA512_IV[const { N as usize - 1 }], Self::real_compute_iv)
+    }
+
+    #[cfg(not(feature = "cache"))]
+    pub fn compute_iv() -> [u64; 8] {
+        Self::real_compute_iv()
+    }
+
+    pub fn new_512_t() -> Self {
+        Self::new_with_iv(Self::compute_iv())
     }
 }
+
+#[cfg(feature = "cache")]
+static SHA512_IV: [crate::util::OnceLock<[u64; 8]>; 510] = const {
+    let mut arr = [const { crate::util::OnceLock::new() }; 510];
+
+    arr
+};
 
 #[macro_export]
 macro_rules! sha512_t {

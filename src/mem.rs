@@ -10,7 +10,7 @@ pub unsafe trait ZeroableInPlace {}
 
 unsafe impl<Z: Zeroable> ZeroableInPlace for Z {}
 
-unsafe impl<Z: Zeroable> ZeroableInPlace for [Z] {}
+unsafe impl<Z: ZeroableInPlace> ZeroableInPlace for [Z] {}
 
 #[repr(C)]
 union Transmuter<T, U> {
@@ -36,3 +36,6 @@ pub fn explicit_zero_in_place<T: ZeroableInPlace + ?Sized>(val: &mut T) {
         write_bytes_explicit(val as *mut T as *mut u8, 0, count);
     }
 }
+
+#[inline(always)]
+pub fn zero_in_place<T: ZeroableInPlace + ?Sized>(val: &mut T) {}

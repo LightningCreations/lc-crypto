@@ -1,6 +1,9 @@
 use bytemuck::TransparentWrapper;
 
-use crate::traits::{SecretSlice, SecretTy};
+use crate::{
+    mem::ZeroableInPlace,
+    traits::{SecretSlice, SecretTy},
+};
 
 /// A Raw number with arbitrary precision.
 /// This value is an unsized type and thus can only be handled via indirections such as [`Box`] or `&RawBigNum`.
@@ -11,6 +14,8 @@ use crate::traits::{SecretSlice, SecretTy};
 #[derive(TransparentWrapper, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct RawBigNum([u8]);
+
+unsafe impl ZeroableInPlace for RawBigNum {}
 
 unsafe impl SecretSlice for RawBigNum {
     type ElemTy = u8;
