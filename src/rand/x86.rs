@@ -69,7 +69,7 @@ impl X86Rand {
 }
 
 impl CsRand for X86Rand {
-    fn next_bytes(&mut self, bytes: &mut [u8]) -> crate::error::Result<()> {
+    fn raw_next_bytes(&mut self, bytes: &mut [u8]) -> crate::error::Result<()> {
         self.test()?;
         let mut chunks = <[u8; 4]>::array_chunks_mut(bytes);
 

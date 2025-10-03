@@ -31,8 +31,6 @@ mod private {
         fn from_u8(val: u8) -> Self;
 
         fn rotate_left(self, n: u32) -> Self;
-
-        fn rotate_right(self, n: u32) -> Self;
     }
 
     impl Sha3Word for u64 {
@@ -58,10 +56,6 @@ mod private {
 
         fn rotate_left(self, n: u32) -> Self {
             self.rotate_left(n)
-        }
-
-        fn rotate_right(self, n: u32) -> Self {
-            self.rotate_right(n)
         }
     }
 
@@ -89,18 +83,13 @@ mod private {
         fn rotate_left(self, n: u32) -> Self {
             self.rotate_left(n)
         }
-
-        fn rotate_right(self, n: u32) -> Self {
-            self.rotate_right(n)
-        }
     }
 }
 
 use core::marker::PhantomData;
 
 use crate::{
-    array::{ArrayVec, BaseArrayVec},
-    asm::write_bytes_explicit,
+    array::BaseArrayVec,
     digest::{ContinuousOutputDigest, RawDigest, ResetableDigest},
     mem::explicit_zero_in_place,
     traits::ByteArray,
@@ -144,13 +133,14 @@ impl<S: KeccackSpec> Keccack<S> {
     fn permute_state(&mut self) {
         let mut state = self.0;
         for r in 0..S::ROUNDS {
-            state = permute_iota(
-                permute_chi(permute_pi(permute_rho(permute_theta(state)))),
-                r,
-            );
+            state = permute_round(state, r);
         }
         self.0 = state;
     }
+}
+
+fn permute_round<W: Sha3Word>(arr: [[W; 5]; 5], r: u32) -> [[W; 5]; 5] {
+    permute_iota(permute_chi(permute_pi(permute_rho(permute_theta(arr)))), r)
 }
 
 fn permute_theta<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
@@ -173,7 +163,7 @@ fn permute_pi<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
     let mut ret: [[W; 5]; 5] = bytemuck::zeroed();
     for i in 0..5 {
         for j in 0..5 {
-            ret[(i + j) % 5][i] = arr[i][j];
+            ret[(3 * i + 2 * j) % 5][i] = arr[i][j];
         }
     }
     ret
@@ -190,12 +180,22 @@ fn permute_chi<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
     ret
 }
 
+/*
+
+0 1 190 28 91
+36 300 6 55 276
+3 10 171 153 231
+105 45 15 21 136
+210 66 253 120 78
+*/
+
+#[rustfmt::skip]
 const TBL: [[u32; 5]; 5] = [
-    [0, 1, 190, 28, 91],
-    [36, 300, 6, 55, 276],
-    [3, 10, 171, 153, 231],
-    [105, 45, 15, 21, 136],
-    [210, 66, 253, 120, 78],
+    [0  , 36 , 3  , 105, 210],
+    [1  , 300, 10 , 45 , 66 ],
+    [190, 6  , 171, 15 , 253],
+    [28 , 55 , 153, 21 , 120],
+    [91 , 276, 231, 136, 78 ],
 ];
 
 fn permute_rho<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
@@ -208,24 +208,29 @@ fn permute_rho<W: Sha3Word>(arr: [[W; 5]; 5]) -> [[W; 5]; 5] {
     res
 }
 
+#[inline]
 fn update_lfsr(mut n: u8) -> u8 {
     let b = n >> 7;
     n <<= 1;
-    n ^= (b | b << 4 | b << 5 | b << 6);
+    n ^= b | b << 4 | b << 5 | b << 6;
     n
 }
 
 fn rc_word<W: Sha3Word>(n: u32) -> W {
     let mut word = bytemuck::zeroed::<W>();
     let mut lfsr = 1;
-    for i in 0..W::L {
+    let mut r = (7 * n) % 255;
+    for _ in 0..r {
+        lfsr = update_lfsr(lfsr);
+    }
+    for i in 0..=W::L {
         let n = (1u32 << i) - 1;
-        let r = ((7 * n) + i) % 255;
-        if r == 0 {
+        word |= W::from_u8(lfsr & 1) << n;
+        r += 1;
+        if r == 255 {
             lfsr = 1;
-            word |= W::from_u8(1) << n;
+            r = 0;
         } else {
-            word |= W::from_u8(lfsr & 1) << n;
             lfsr = update_lfsr(lfsr);
         }
     }
@@ -239,6 +244,21 @@ fn permute_iota<W: Sha3Word>(mut arr: [[W; 5]; 5], r: u32) -> [[W; 5]; 5] {
 
 type Word<S> = <S as KeccackSpec>::Word;
 type StateBytes<S> = <Word<S> as Sha3Word>::StateBytes;
+
+fn pad_sha3<S: KeccackSpec>(rest: &[u8]) -> S::Rate {
+    const {
+        assert!(S::PREPAD_LENGTH < 7);
+    }
+    let mut block = BaseArrayVec::<S::Rate>::from_slice(rest);
+    block.push(
+        S::PREPAD_BITS.unbounded_shl(8 - S::PREPAD_LENGTH)
+            | (1u8.unbounded_shl(7 - S::PREPAD_LENGTH)),
+    );
+    let mut block = block.into_inner();
+    *block.last_mut() |= 0x01;
+    block
+}
+
 impl<S: KeccackSpec> RawDigest for Keccack<S> {
     type Block = S::Rate;
 
@@ -259,14 +279,7 @@ impl<S: KeccackSpec> RawDigest for Keccack<S> {
     }
 
     fn raw_update_final(&mut self, rest: &[u8]) -> crate::error::Result<()> {
-        const {
-            assert!(S::PREPAD_LENGTH < 7);
-        }
-        let mut block = BaseArrayVec::<Self::Block>::from_slice(rest);
-        block.push(S::PREPAD_BITS | (1 << (8 - S::PREPAD_LENGTH)));
-        let mut block = block.into_inner();
-        *block.last_mut() |= 0x01;
-
+        let block = pad_sha3::<S>(rest);
         self.raw_update(&block)
     }
 
@@ -331,7 +344,7 @@ macro_rules! sha3 {
         $spec_name:ident ($output_len:literal)
     } => {
         const _: () = {assert!($output_len%8 == 0);};
-        pub struct $spec_name;
+        pub struct $spec_name (());
         impl KeccackSpec for $spec_name {
             type Word = u64;
 
@@ -390,3 +403,137 @@ shake!(RawShake256Spec(512) = 0b11);
 
 shake!(Shake128Spec(256) = 0b1111);
 shake!(Shake256Spec(512) = 0b1111);
+
+#[cfg(test)]
+fn pad_keccack<S: KeccackSpec, const N: usize>(input: [u8; N], _: S) -> S::Rate {
+    pad_sha3::<S>(&input)
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        digest::raw::sha3::{KeccackSpec, private::Sha3Word},
+        traits::ByteArray,
+    };
+
+    const fn with_prefix_first_last<const N: usize>(
+        prefix: impl ByteArray,
+        first: u8,
+        last: u8,
+    ) -> [u8; N] {
+        const fn with_prefix_first_last_impl<const N: usize, P: ByteArray>(
+            prefix: P,
+            first: u8,
+            last: u8,
+        ) -> [u8; N] {
+            const {
+                assert!((N - P::LEN) > 1);
+            }
+            let mut arr = bytemuck::zeroed::<[u8; N]>();
+            let (begin, end) = arr.split_at_mut(P::LEN);
+            begin.copy_from_slice(crate::mem::as_slice(&prefix));
+            match end {
+                [begin, .., end] => {
+                    *begin = first;
+                    *end = last;
+                }
+                _ => unreachable!(),
+            }
+
+            arr
+        }
+        with_prefix_first_last_impl(prefix, first, last)
+    }
+    macro_rules! test_permute{
+        ($($(#[$meta:meta])* $func:ident => [$($input:tt $(($($extra_params:expr),* $(,)?))? => $output:expr),* $(,)?]),* $(,)?) => {
+            $($(#[$meta])*
+            #[test]
+            fn ${concat(test_, $func)}() {
+                $({
+                    let __input = const { $input };
+                    let __expected = const { $output } ;
+                    let __actual = super::$func(__input $(, $(const { $extra_params }),*)?);
+                    assert_eq!(__expected, __actual, "input: {__input:x?} -> expected: {__expected:x?}, actual: {__actual:x?}");
+                })*
+            })*
+        };
+    }
+
+    test_permute! {
+        permute_theta => [
+            [[0u64;5];5] => [[0u64;5];5],
+            [[!0u64;5];5] => [[0u64;5];5],
+        ],
+        permute_rho => [
+            [[0u64;5];5] => [[0u64;5];5],
+            [[!0u64;5];5] => [[!0u64;5];5],
+        ],
+        permute_pi => [
+            [[0u64;5];5] => [[0u64;5];5],
+            [[!0u64;5];5] => [[!0u64;5];5],
+            [[0u64,1,2,3,4], [5,6,7,8,9], [10, 11, 12, 13, 14], [15, 16,17,18,19,], [20, 21, 22, 23, 24]] => [
+                [0u64, 6, 12, 18, 24],
+                [3, 9, 10, 16, 22],
+                [1, 7, 13, 19, 20],
+                [4, 5, 11, 17, 23],
+                [2, 8, 14, 15, 21],
+            ]
+        ],
+        permute_chi => [
+            [[0u64;5];5] => [[0u64;5];5],
+            [[!0u64;5];5] => [[!0u64;5];5]
+        ],
+        permute_iota  => [
+            [[0u64;5];5] (0) => [
+                [1u64, 0, 0, 0, 0],
+                [0u64;5],
+                [0u64;5],
+                [0u64;5],
+                [0u64;5],
+            ],
+            [[0u64;5];5] (1) => [
+                [0x8082u64, 0,0,0,0],
+                [0u64; 5],
+                [0u64; 5],
+                [0u64; 5],
+                [0u64; 5],
+            ],
+            [[!0u64;5];5] (0) => [
+                [!1u64, !0, !0, !0, !0],
+                [!0u64;5],
+                [!0u64;5],
+                [!0u64;5],
+                [!0u64;5],
+            ],
+        ],
+        permute_round => [
+            [[0u64;5];5] (0) => [
+                [1u64, 0, 0, 0, 0],
+                [0u64;5],
+                [0u64;5],
+                [0u64;5],
+                [0u64;5],
+            ],
+        ],
+        pad_keccack => [
+            [] (super::Sha3Spec256(())) =>  with_prefix_first_last([],0x60, 0x01),
+            [] (super::Sha3Spec224(())) => with_prefix_first_last::<144>([],0x60, 0x01),
+            [0x01] (super::Sha3Spec256(())) => with_prefix_first_last::<136>([0x01], 0x60, 0x01),
+            [0x00; 135] (super::Sha3Spec256(())) => with_prefix_first_last::<136>([0x00; 134], 0x00, 0x61),
+        ],
+    }
+
+    fn test_round_impl<S: KeccackSpec>() {
+        const { assert!(S::ROUNDS == <S::Word as Sha3Word>::L * 2 + 12) }
+    }
+
+    #[test]
+    fn test_round() {
+        test_round_impl::<super::Sha3Spec224>();
+        test_round_impl::<super::Sha3Spec256>();
+        test_round_impl::<super::Sha3Spec384>();
+        test_round_impl::<super::Sha3Spec512>();
+        test_round_impl::<super::Shake128Spec<[u8; 32], 256>>();
+        test_round_impl::<super::Shake256Spec<[u8; 32], 256>>();
+    }
+}

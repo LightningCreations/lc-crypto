@@ -77,6 +77,10 @@ impl<'a, A: ByteArray> ArrayChunksMut<'a, A> {
     pub const fn remainder_mut(&mut self) -> &mut [u8] {
         self.rem
     }
+
+    pub const fn take_remainder(&mut self) -> &'a mut [u8] {
+        core::mem::replace(&mut self.rem, &mut [])
+    }
 }
 
 impl<'a, A: ByteArray> Iterator for ArrayChunksMut<'a, A> {
@@ -111,7 +115,7 @@ pub enum FromHexStringError {
 }
 
 pub trait ByteArray:
-    Sealed + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + core::fmt::Debug + 'static
+    Sealed + Copy + Pod + Eq + AsRef<[u8]> + AsMut<[u8]> + SecretTy + core::fmt::Debug + 'static
 {
     const LEN: usize;
 

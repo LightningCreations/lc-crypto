@@ -54,4 +54,4 @@ mk_hash_test!(sha512 => Sha512);
 mk_hash_test!(sha512_224 => Sha512_224);
 mk_hash_test!(sha512_256 => Sha512_256);
 
-// mk_hash_test!(sha3_256 => Sha3_256);
+mk_hash_test!(sha3_256 => Sha3_256);

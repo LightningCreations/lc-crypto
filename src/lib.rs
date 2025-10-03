@@ -7,6 +7,7 @@
 )]
 #![cfg_attr(feature = "nightly-allocator_api", feature(allocator_api))]
 #![feature(iter_advance_by, trivial_bounds)]
+#![cfg_attr(test, feature(macro_metavar_expr_concat))]
 //!
 //! Crate for primitives used by lc-crypto
 //!
