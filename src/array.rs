@@ -573,14 +573,14 @@ unsafe impl<A: ByteArray> ArrayVecArray for Secret<A> {
     where
         Self: Ord,
     {
-        const { panic!("Secret: !Ord, right") }
+        panic!("Secret: !Ord, right")
     }
 
     fn hash_slice<H: core::hash::Hasher>(_: &Self::Slice, _: &mut H)
     where
         Self: core::hash::Hash,
     {
-        const { panic!("Secret: !Hash, right") }
+        panic!("Secret: !Hash, right")
     }
 
     fn from_underlying(underlying: Self::Underlying) -> Self {

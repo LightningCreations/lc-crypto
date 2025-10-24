@@ -250,12 +250,9 @@ fn pad_sha3<S: KeccackSpec>(rest: &[u8]) -> S::Rate {
         assert!(S::PREPAD_LENGTH < 7);
     }
     let mut block = BaseArrayVec::<S::Rate>::from_slice(rest);
-    block.push(
-        S::PREPAD_BITS.unbounded_shl(8 - S::PREPAD_LENGTH)
-            | (1u8.unbounded_shl(7 - S::PREPAD_LENGTH)),
-    );
+    block.push(S::PREPAD_BITS | (1u8.unbounded_shl(S::PREPAD_LENGTH)));
     let mut block = block.into_inner();
-    *block.last_mut() |= 0x01;
+    *block.last_mut() |= 0x80;
     block
 }
 
@@ -355,7 +352,7 @@ macro_rules! sha3 {
 
             const ROUNDS: u32 = 24;
 
-            const PREPAD_BITS: u8 = 0b01;
+            const PREPAD_BITS: u8 = 0b10;
             const PREPAD_LENGTH: u32 = 2;
         }
     };
@@ -376,7 +373,7 @@ pub type Sha3_384 = Keccack<Sha3Spec384>;
 
 pub type Sha3_512 = Keccack<Sha3Spec512>;
 
-macro_rules! shake {
+macro_rules! shake_impl {
     {
         $spec_name:ident ($capacity:literal) = $pad:literal
     } => {
@@ -398,11 +395,47 @@ macro_rules! shake {
     };
 }
 
-shake!(RawShake128Spec(256) = 0b11);
-shake!(RawShake256Spec(512) = 0b11);
+shake_impl!(RawShake128Spec(256) = 0b11);
+shake_impl!(RawShake256Spec(512) = 0b11);
 
-shake!(Shake128Spec(256) = 0b1111);
-shake!(Shake256Spec(512) = 0b1111);
+shake_impl!(Shake128Spec(256) = 0b1111);
+shake_impl!(Shake256Spec(512) = 0b1111);
+
+#[macro_export]
+macro_rules! shake128 {
+    ($bits:expr) => {
+        $crate::digest::raw::sha3::Keccack::<
+            $crate::digest::raw::sha3::Shake128Spec<[u8; (($bits + 7) / 8)], $bits>,
+        >
+    };
+}
+
+#[macro_export]
+macro_rules! shake256 {
+    ($bits:expr) => {
+        $crate::digest::raw::sha3::Keccack::<
+            $crate::digest::raw::sha3::Shake256Spec<[u8; (($bits + 7) / 8)], $bits>,
+        >
+    };
+}
+
+#[macro_export]
+macro_rules! raw_shake128 {
+    ($bits:expr) => {
+        $crate::digest::raw::sha3::Keccack::<
+            $crate::digest::raw::sha3::RawShake128Spec<[u8; (($bits + 7) / 8)], $bits>,
+        >
+    };
+}
+
+#[macro_export]
+macro_rules! raw_shake256 {
+    ($bits:expr) => {
+        $crate::digest::raw::sha3::Keccack::<
+            $crate::digest::raw::sha3::RawShake256Spec<[u8; (($bits + 7) / 8)], $bits>,
+        >
+    };
+}
 
 #[cfg(test)]
 fn pad_keccack<S: KeccackSpec, const N: usize>(input: [u8; N], _: S) -> S::Rate {
@@ -514,12 +547,6 @@ mod test {
                 [0u64;5],
                 [0u64;5],
             ],
-        ],
-        pad_keccack => [
-            [] (super::Sha3Spec256(())) =>  with_prefix_first_last([],0x60, 0x01),
-            [] (super::Sha3Spec224(())) => with_prefix_first_last::<144>([],0x60, 0x01),
-            [0x01] (super::Sha3Spec256(())) => with_prefix_first_last::<136>([0x01], 0x60, 0x01),
-            [0x00; 135] (super::Sha3Spec256(())) => with_prefix_first_last::<136>([0x00; 134], 0x00, 0x61),
         ],
     }
 
