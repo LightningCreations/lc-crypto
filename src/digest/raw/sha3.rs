@@ -25,6 +25,8 @@ mod private {
 
         const L: u32;
 
+        const BYTES: usize;
+
         fn from_le_bytes(bytes: Self::FromBytes) -> Self;
         fn to_le_bytes(self) -> Self::FromBytes;
 
@@ -41,6 +43,8 @@ mod private {
         const BITS: u32 = 64;
 
         const L: u32 = 6;
+
+        const BYTES: usize = 8;
 
         fn from_le_bytes(bytes: Self::FromBytes) -> Self {
             u64::from_le_bytes(bytes)
@@ -67,6 +71,8 @@ mod private {
         const BITS: u32 = 32;
 
         const L: u32 = 5;
+
+        const BYTES: usize = 4;
 
         fn from_le_bytes(bytes: Self::FromBytes) -> Self {
             Self::from_le_bytes(bytes)
@@ -136,6 +142,28 @@ impl<S: KeccackSpec> Keccack<S> {
             state = permute_round(state, r);
         }
         self.0 = state;
+    }
+
+    pub fn raw_output(&mut self) -> S::Rate {
+        let mut r = bytemuck::zeroed::<S::Rate>();
+        let mut window = r.as_mut();
+        for i in 0..5 {
+            for j in 0..5 {
+                let w = self.0[i][j];
+                let bytes = w.to_le_bytes();
+                let l = window.len().min(S::Word::BYTES);
+                let left;
+                (left, window) = window.split_at_mut(l);
+                left.copy_from_slice(&bytes.as_ref()[..l]);
+                if window.is_empty() {
+                    self.permute_state();
+
+                    return r;
+                }
+            }
+        }
+
+        unreachable!()
     }
 }
 
@@ -287,36 +315,20 @@ impl<S: KeccackSpec> RawDigest for Keccack<S> {
 
         let mut output_sl = output.as_mut();
 
-        let mut arr_chunks = StateBytes::<S>::array_chunks_mut(&mut output_sl);
+        let mut arr_chunks = S::Rate::array_chunks_mut(&mut output_sl);
 
         for chunk in &mut arr_chunks {
-            let mut bytes: &mut [[<Word<S> as Sha3Word>::FromBytes; 5]; 5] =
-                bytemuck::must_cast_mut(chunk);
-            for (a, b) in bytes.iter_mut().zip(&self.0) {
-                for (a, b) in a.iter_mut().zip(b) {
-                    *a = b.to_le_bytes();
-                }
-            }
-            self.permute_state();
+            let bytes = self.raw_output();
+            chunk.as_mut().copy_from_slice(bytes.as_ref());
         }
 
         let rem = arr_chunks.into_remainder();
 
         let rlen = rem.len();
 
-        for (i, w) in self
-            .0
-            .into_iter()
-            .flatten()
-            .enumerate()
-            .take_while(|(i, _)| (*i) * core::mem::size_of::<Word<S>>() < rlen)
-        {
-            let block = w.to_le_bytes();
-            let r = core::mem::size_of::<Word<S>>().min(rem.len());
-
-            let base = i * core::mem::size_of::<Word<S>>();
-
-            rem[base..][..r].copy_from_slice(&block.as_ref()[..r]);
+        if rlen > 0 {
+            let bytes = self.raw_output();
+            rem.copy_from_slice(&bytes.as_ref()[..rlen]);
         }
 
         *output.last_mut() &= lmask;
@@ -435,11 +447,6 @@ macro_rules! raw_shake256 {
             $crate::digest::raw::sha3::RawShake256Spec<[u8; (($bits + 7) / 8)], $bits>,
         >
     };
-}
-
-#[cfg(test)]
-fn pad_keccack<S: KeccackSpec, const N: usize>(input: [u8; N], _: S) -> S::Rate {
-    pad_sha3::<S>(&input)
 }
 
 #[cfg(test)]
