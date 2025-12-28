@@ -50,7 +50,8 @@ pub mod bignum;
 
 pub mod secret;
 
-mod detect;
+#[doc(hidden)]
+pub mod detect;
 
 #[cfg(test)]
 mod test;

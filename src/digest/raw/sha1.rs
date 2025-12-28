@@ -3,7 +3,10 @@
 use crate::digest::{RawDigest, ResetableDigest};
 use crate::traits::ByteArray;
 
-#[deprecated = "SHA-1 is insecure and should not be used for security purposes. To disable this warning, enable the `insecure-sha1` feature"]
+#[cfg_attr(
+    not(all(feature = "insecure-sha1", allow_insecure_alg)),
+    deprecated = "SHA-1 is insecure and should not be used for security purposes. To disable this warning, enable the `insecure-sha1` feature and set the --cfg allow_insecure_alg flag"
+)]
 pub struct Sha1 {
     state: [u32; 5],
     byte_len: u64,

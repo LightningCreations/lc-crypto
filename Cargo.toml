@@ -63,6 +63,8 @@ all-digest = ["default-digest"]
 # Random Number Generators
 use-insecure-hw-rng = []
 
+insecure-sha1 = []
+
 default-rand = ["rand"]
 all-rand = ["default-rand"]
 
@@ -91,4 +93,8 @@ lilium-sys.git = "https://github.com/LiliumOS/lilium-sys"
 
 [lints.rust.unexpected_cfgs]
 level = "warn"
-check-cfg = ['cfg(allow_insecure_hw_rand)']
+check-cfg = [
+    'cfg(allow_insecure_hw_rand)',
+    'cfg(allow_insecure_alg)',
+    'cfg(target_os, values("lilium"))',
+]

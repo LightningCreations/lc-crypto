@@ -80,3 +80,14 @@ use crate::traits::ByteArray;
 
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 pub mod x86;
+
+#[cfg(all(target_os = "lilium", not(target_env = "kernel")))]
+pub mod lilium;
+
+macro_rules! def_generic_rand {
+    ($vis:vis type $real_name:ident = $impl_ty:ty;) => {
+        $vis struct $real_name($impl_ty);
+
+        impl
+    };
+}
