@@ -1,5 +1,4 @@
 #![cfg_attr(not(any(test, feature = "std", doc)), no_std)]
-#![feature(bigint_helper_methods)]
 #![cfg_attr(feature = "nightly-docs", feature(intra_doc_pointers, doc_cfg))]
 #![cfg_attr(
     all(feature = "std", feature = "nightly-std-io_error_more"),

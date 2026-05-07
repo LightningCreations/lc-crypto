@@ -35,107 +35,114 @@ use spin::once::Once;
 // * Bit 11, which indicates `syscall` support, is set to `1` on an AMD k6 processor that indicates support via `cpuid[eax=0x80000001].ecx[10]`, and
 // * Bit 11 may be set to `0` if executed from a 32-bit process running on a 64-bit OS, even if `cpuid` would report it's support.
 #[cfg(feature = "runtime-detect")]
-static CPU_FEATURE_INFO: Once<[u32; 48]> = Once::new();
+static CPU_FEATURE_INFO: Once<[u32; 36]> = Once::new();
 
 #[cfg(feature = "runtime-detect")]
-fn init_cpuid_features() -> [u32; 48] {
+fn init_cpuid_features() -> [u32; 36] {
     #[cfg(target_arch = "x86")]
-    use core::arch::x86 as arch;
+    use core::arch::x86::{__cpuid, __cpuid_count};
 
     #[cfg(target_arch = "x86_64")]
-    use core::arch::x86_64 as arch;
+    use core::arch::x86_64::{__cpuid, __cpuid_count};
 
-    use arch::CpuidResult;
-    let eax1 = unsafe { arch::__cpuid(1) };
-    let eax7_ecx0 = unsafe { arch::__cpuid_count(7, 0) };
-    let eax7_ecx1 = unsafe { arch::__cpuid_count(7, 1) };
-    let eax7_ecx2 = unsafe { arch::__cpuid_count(7, 2) };
-    let eax80000001 = unsafe { arch::__cpuid(0x80000001) };
-
-    let mut eax80000001_ecx_val = eax80000001.ecx;
-
-    if cfg!(target_pointer_width = "32") {
-        eax80000001_ecx_val &= !0x1BFDFF;
-    } else {
-        eax80000001_ecx_val &= !0x1BF5FF;
+    const fn select_mask(sel: bool, mask: u32) -> u32 {
+        if sel { u32::MAX } else { !mask }
     }
 
-    let eax24_ecx0 = if (eax7_ecx1.edx & (1 << 19)) != 0 {
-        unsafe { arch::__cpuid_count(0x24, 0) }
-    } else {
-        CpuidResult {
-            eax: 0,
-            ebx: 0,
-            ecx: 0,
-            edx: 0,
-        }
-    };
+    {
+        let cpuid_eax1 = __cpuid(1);
+        let cpuid_eax7_ecx0 = __cpuid_count(7, 0);
+        let cpuid_eax7_ecx1 = if cpuid_eax7_ecx0.eax >= 1 {
+            __cpuid_count(7, 1)
+        } else {
+            unsafe { core::mem::zeroed() }
+        };
+        let cpuid_eax7_ecx2 = if cpuid_eax7_ecx0.eax >= 2 {
+            __cpuid_count(7, 2)
+        } else {
+            unsafe { core::mem::zeroed() }
+        };
+        let cpuidx_eaxe1 = __cpuid(0x80000001);
+        let cpuid_eaxD_ecx0 = __cpuid_count(0xD, 0);
+        let cpuid_eaxD_ecx1 = __cpuid_count(0x0D, 1);
+        let cpuid_eax24_ecx0 = __cpuid_count(0x24, 0);
+        let cpuid_eax24_ecx1 = __cpuid_count(0x24, 1);
 
-    let eax0d = if (eax1.ecx & (1 << 26)) != 0 {
-        [unsafe { arch::__cpuid_count(0x0D, 0) }, unsafe {
-            arch::__cpuid_count(0x0D, 1)
-        }]
-    } else {
-        unsafe { core::mem::zeroed() }
-    };
+        let enable_osxsave = (cpuid_eax1.ecx & (1 << 27)) != 0;
 
-    let features = [
-        eax1.ecx,
-        eax1.edx,
-        eax7_ecx0.ecx,
-        eax7_ecx1.edx,
-        eax7_ecx0.ebx,
-        eax7_ecx1.eax,
-        eax7_ecx1.ecx,
-        eax7_ecx1.edx,
-        eax7_ecx1.ebx,
-        eax7_ecx2.eax,
-        eax7_ecx2.ecx,
-        eax7_ecx2.edx,
-        0,
-        0,
-        eax80000001_ecx_val,
-        eax80000001.edx,
-        eax24_ecx0.eax,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        eax0d[0].eax,
-        eax0d[0].edx,
-        eax0d[0].ecx,
-        eax0d[1].eax,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-        0,
-    ];
+        let getbv = if enable_osxsave {
+            let lo: u64;
+            let hi: u64;
+            unsafe { core::arch::asm!("xgetbv", in("rcx") 0, out("rax") lo, out("rdx") hi) };
 
-    features
+            (hi << 32) | lo
+        } else {
+            0
+        };
+
+        let use_avx512 = (getbv & (0b111 << 5)) == (0b111 << 5);
+        let use_avx = (getbv & (1 << 2)) != 0;
+        let use_apx = (getbv & (1 << 19)) != 0;
+
+        let avx_mask_eax1_ecx = (1 << 28);
+        let avx_mask_eax7_ec0_ebx = (1 << 5);
+
+        let apx_mask_eax7_ecx1_edx = (1 << 21);
+
+        let avx512_mask_eax7_ecx0_ecx = (1 << 1) | (1 << 6) | (1 << 11) | (1 << 12) | (1 << 14);
+        let avx512_mask_eax7_ecx0_edx = (1 << 2) | (1 << 3) | (1 << 8) | (1 << 23);
+        let avx512_mask_eax7_ecx0_ebx =
+            (1 << 16) | (1 << 17) | (1 << 21) | (1 << 26) | (1 << 28) | (1 << 30) | (1 << 31);
+        let avx512_mask_eax7_ecx1_eax = (1 << 5);
+
+        let arr = [
+            cpuid_eax1.ecx & select_mask(use_avx, avx_mask_eax1_ecx),
+            cpuid_eax1.edx,
+            cpuid_eax7_ecx0.ecx & select_mask(use_avx512, avx512_mask_eax7_ecx0_ecx),
+            cpuid_eax7_ecx0.edx & select_mask(use_avx512, avx512_mask_eax7_ecx0_edx),
+            cpuid_eax7_ecx0.ebx
+                & select_mask(use_avx, avx_mask_eax7_ec0_ebx)
+                & select_mask(use_avx512, avx512_mask_eax7_ecx0_ebx),
+            cpuid_eax7_ecx1.eax & select_mask(use_avx512, avx512_mask_eax7_ecx1_eax),
+            cpuid_eax7_ecx1.ecx,
+            cpuid_eax7_ecx1.edx & select_mask(use_apx, apx_mask_eax7_ecx1_edx),
+            cpuid_eax7_ecx1.ebx,
+            cpuid_eax7_ecx2.eax,
+            cpuid_eax7_ecx2.ecx,
+            cpuid_eax7_ecx2.edx,
+            0,
+            0,
+            cpuidx_eaxe1.ecx,
+            cpuidx_eaxe1.edx,
+            cpuid_eax24_ecx0.ebx,
+            cpuid_eax24_ecx1.ecx,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            cpuid_eaxD_ecx0.eax,
+            cpuid_eaxD_ecx0.edx,
+            cpuid_eaxD_ecx1.eax,
+            0,
+        ];
+
+        arr
+    }
 }
 
 #[cfg(feature = "runtime-detect")]
 #[doc(hidden)]
-pub fn __get_cpuid_features() -> &'static [u32; 48] {
+pub fn __get_cpuid_features() -> &'static [u32; 36] {
     CPU_FEATURE_INFO.call_once(init_cpuid_features)
 }
 
@@ -584,19 +591,19 @@ macro_rules! __x86_feature_to_bit {
         (16, 18)
     };
     ("xsaveopt") => {
-        (35, 0)
+        (34, 0)
     };
     ("xsavec") => {
-        (35, 1)
+        (34, 1)
     };
     ("xgetbv_ecx1") => {
-        (35, 2)
+        (34, 2)
     };
     ("xss") => {
-        (35, 3)
+        (34, 3)
     };
     ("xfd") => {
-        (35, 4)
+        (34, 4)
     };
     ($feat:literal) => {
         ::core::compile_error!(::core::concat!("Unknown feature ", $feat))
